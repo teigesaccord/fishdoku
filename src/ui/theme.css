@@ -1,0 +1,284 @@
+/* Fishdoku theme: color tokens, light/dark via prefers-color-scheme, an
+   11-color pond palette (pond-0 .. pond-10), monospace font and the --cell
+   sizing formula. Pond boundary borders are driven by per-cell CSS custom
+   properties (--b-t/--b-r/--b-b/--b-l) injected by ui/board.ts. */
+
+:root {
+  /* Color tokens */
+  --bg: #fbf7ee;
+  --fg: #1c2733;
+  --muted: #6b7684;
+  --panel: #ffffff;
+  --panel-border: #d9d2c4;
+  --cell-bg: #fdfaf3;
+  --text-on-cell: #20303f;
+
+  /* Pond boundaries */
+  --bd: 3px; /* heavy border drawn on sides where a neighbor is a different pond */
+
+  /* Glyphs */
+  --fish: #12657a;
+  --conflict: #c0392b;
+
+  /* Fallback cell size for standalone rendering. ui/board.ts overrides --cell
+     per puzzle with min((100vw - 32px) / N, 56px) so the board always fits. */
+  --cell: min((100vw - 32px) / 9, 56px);
+
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12171d;
+    --fg: #e8eef4;
+    --muted: #9aa6b2;
+    --panel: #1b222a;
+    --panel-border: #2c363f;
+    --cell-bg: #1b222a;
+    --text-on-cell: #e8eef4;
+    --fish: #7fd4d0;
+    --conflict: #ff7068;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Header */
+#fishdoku-header {
+  width: 100%;
+  max-width: 640px;
+  padding: 14px 16px 6px;
+  text-align: center;
+}
+
+.fish-title {
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  margin: 2px 0 4px;
+  font-size: 1.15rem;
+}
+
+.fish-sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.solved-badge {
+  color: var(--fish);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-top: 4px;
+}
+
+/* Buttons (nav + clear) */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  line-height: 1.2;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--fish);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Main + board */
+#fishdoku-main {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 28px;
+}
+
+#board-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px;
+}
+
+#board {
+  display: grid;
+  gap: 0;
+  align-content: start;
+  justify-content: center;
+  background: var(--panel-border);
+  padding: 2px;
+  border-radius: 6px;
+}
+
+.board-cell {
+  width: var(--cell);
+  height: var(--cell);
+  /* No min-width: at 320px an 11x11 board must still fit without horizontal
+     scrolling. The 28px minimum only applies at 360px, where the formula
+     yields ~29.8px. */
+  font-size: calc(var(--cell) * 0.45);
+  line-height: 1;
+  padding: 0;
+  margin: 0;
+  background: var(--cell-bg);
+  color: var(--text-on-cell);
+  border-style: solid;
+  border-color: transparent;
+  /* heavy pond-boundary borders where a neighbor is a different pond */
+  border-width: var(--b-t, 0px) var(--b-r, 0px) var(--b-b, 0px) var(--b-l, 0px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.board-cell[data-state="empty"] {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.board-cell[data-state="fish"] {
+  color: var(--fish);
+}
+
+.board-cell[data-conflict] {
+  color: var(--conflict);
+  font-weight: 700;
+}
+
+/* Pond background tints (light variants). Dark variants overridden below. */
+.board-cell[data-pond="0"] {
+  background-color: #f4dcc0;
+}
+.board-cell[data-pond="1"] {
+  background-color: #e3eccd;
+}
+.board-cell[data-pond="2"] {
+  background-color: #d5ecf2;
+}
+.board-cell[data-pond="3"] {
+  background-color: #f7cfc7;
+}
+.board-cell[data-pond="4"] {
+  background-color: #e6d6f4;
+}
+.board-cell[data-pond="5"] {
+  background-color: #f9e6bd;
+}
+.board-cell[data-pond="6"] {
+  background-color: #d3efcf;
+}
+.board-cell[data-pond="7"] {
+  background-color: #ffe0c3;
+}
+.board-cell[data-pond="8"] {
+  background-color: #ded3f2;
+}
+.board-cell[data-pond="9"] {
+  background-color: #f2ecd0;
+}
+.board-cell[data-pond="10"] {
+  background-color: #cfe9e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .board-cell[data-pond="0"] {
+    background-color: #4a3d22;
+  }
+  .board-cell[data-pond="1"] {
+    background-color: #354526;
+  }
+  .board-cell[data-pond="2"] {
+    background-color: #244247;
+  }
+  .board-cell[data-pond="3"] {
+    background-color: #48342f;
+  }
+  .board-cell[data-pond="4"] {
+    background-color: #3b2c4a;
+  }
+  .board-cell[data-pond="5"] {
+    background-color: #4a4020;
+  }
+  .board-cell[data-pond="6"] {
+    background-color: #2b4a30;
+  }
+  .board-cell[data-pond="7"] {
+    background-color: #4a3823;
+  }
+  .board-cell[data-pond="8"] {
+    background-color: #3a3149;
+  }
+  .board-cell[data-pond="9"] {
+    background-color: #413d25;
+  }
+  .board-cell[data-pond="10"] {
+    background-color: #23433b;
+  }
+}
+
+/* Win overlay */
+#win-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 20;
+}
+
+.win-hidden {
+  display: none !important;
+}
+
+.win-box {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 22px 26px;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.win-box pre {
+  margin: 0 0 10px;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  color: var(--fish);
+}

@@ -1,0 +1,21 @@
+{
+  "name": "fishdoku",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Fishdoku - an ad-free, fish-themed daily logic puzzle (Nonograms × Nurikabe hybrid)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "jsdom": "^31.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}
