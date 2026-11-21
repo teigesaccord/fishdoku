@@ -40,24 +40,27 @@ export function redirectToAvailable(): string {
     const safe = clampDate(current);
     if (safe !== current) {
       try {
-        window.history.replaceState({}, "", `/#/${safe}`);
+        window.history.replaceState({}, "", `#/${safe}`);
       } catch {
-        window.location.hash = `/#/${safe}`;
+        window.location.hash = `/${safe}`;
       }
     }
   }
   return currentDate();
 }
 
+// URLs are written relative to the page (`#/date`, never `/#/date`) so the app
+// keeps working when it is served from a subpath such as teige.dev/fishdoku/.
+
 /** Navigate to a date, adding a history entry so the back/forward buttons work. */
 export function navigateTo(date: string): void {
   const safe = clampDate(date);
   try {
-    window.history.pushState({}, "", `/#/${safe}`);
+    window.history.pushState({}, "", `#/${safe}`);
   } catch {
     // Some environments disallow pushState; fall back to assigning the hash.
     try {
-      window.location.hash = `/#/${safe}`;
+      window.location.hash = `/${safe}`;
     } catch {
       /* no-op */
     }

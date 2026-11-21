@@ -60,3 +60,15 @@ describe("router: navigateTo", () => {
     expect(window.history.length).toBe(before + 1);
   });
 });
+
+describe("router: subpath hosting", () => {
+  it("keeps the page path when navigating (e.g. served from /fishdoku/)", () => {
+    window.history.replaceState({}, "", "/fishdoku/#/2026-11-18");
+    navigateTo("2026-11-19");
+    expect(window.location.pathname).toBe("/fishdoku/");
+    window.history.replaceState({}, "", "/fishdoku/#/2999-01-01");
+    redirectToAvailable();
+    expect(window.location.pathname).toBe("/fishdoku/");
+    window.history.replaceState({}, "", "/");
+  });
+});
