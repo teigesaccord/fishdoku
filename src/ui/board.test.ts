@@ -3,7 +3,7 @@ import type { Puzzle, Board } from "../core/puzzle";
 import { CellState, idx } from "../core/puzzle";
 import { generate } from "../core/generator";
 import { assignPondStyles } from "./pond-colors";
-import { BoardController } from "./board";
+import { BoardController, EMPTY_FILL } from "./board";
 
 /** A fixed puzzle and an all-empty board for it. */
 function fixture(size: number, seed: string): { puzzle: Puzzle; board: Board } {
@@ -50,7 +50,7 @@ describe("board: grid and cells", () => {
       const { puzzle } = fixture(n, `size-${n}`);
       const host = document.createElement("div");
       new BoardController(host, () => {}).setPuzzle(puzzle);
-      expect(host.style.getPropertyValue("--cell")).toBe(`min((100vw - 32px) / ${n}, 56px)`);
+      expect(host.style.getPropertyValue("--cell")).toBe(`min((100vw - 36px) / ${n}, 56px)`);
     }
     // Numeric check of the spec: 11x11 fits (no horizontal scroll) down to 320px,
     // and each cell is at least 28px at 360px.
@@ -73,38 +73,46 @@ describe("board: grid and cells", () => {
 
     const cells = cellsOf(root);
     for (let i = 0; i < 49; i++) {
-      expect(cells[i].textContent).toBe(styles.textures[puzzle.ponds[i]]);
+      // Empty cells are filled with the pond's texture repeated across the cell.
+      expect(cells[i].textContent).toBe(styles.textures[puzzle.ponds[i]].repeat(EMPTY_FILL));
     }
   });
 
-  it("draws heavy borders only across pond boundaries", () => {
+  it("draws heavy pond boundaries and light grid lines, in both directions", () => {
     const { puzzle, board } = fixture(9, "board-border");
     const controller = new BoardController(root, () => {});
     controller.setPuzzle(puzzle);
     controller.render(board);
     const cells = cellsOf(root);
+    const n = puzzle.size;
 
-    let checkedBoundary = false;
-    let checkedInterior = false;
-    for (let r = 0; r < puzzle.size; r++) {
-      for (let c = 0; c + 1 < puzzle.size; c++) {
-        const i = idx(r, c, puzzle.size);
-        const j = idx(r, c + 1, puzzle.size);
-        const right = cells[i].style.getPropertyValue("--b-r");
-        const left = cells[j].style.getPropertyValue("--b-l");
-        if (puzzle.ponds[i] !== puzzle.ponds[j]) {
-          expect(right).toBe("3px");
-          expect(left).toBe("3px");
-          checkedBoundary = true;
-        } else {
-          expect(right).toBe("0px");
-          expect(left).toBe("0px");
-          checkedInterior = true;
+    let boundaries = 0;
+    let interior = 0;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const i = idx(r, c, n);
+        // Horizontal neighbour to the right.
+        if (c + 1 < n) {
+          const j = idx(r, c + 1, n);
+          const across = puzzle.ponds[i] !== puzzle.ponds[j];
+          expect(cells[i].style.getPropertyValue("--b-r")).toBe(across ? "3px" : "1px");
+          expect(cells[j].style.getPropertyValue("--b-l")).toBe(across ? "3px" : "1px");
+          if (across) boundaries++;
+          else interior++;
+        }
+        // Vertical neighbour below (this side used to be missing entirely).
+        if (r + 1 < n) {
+          const j = idx(r + 1, c, n);
+          const across = puzzle.ponds[i] !== puzzle.ponds[j];
+          expect(cells[i].style.getPropertyValue("--b-b")).toBe(across ? "3px" : "1px");
+          expect(cells[j].style.getPropertyValue("--b-t")).toBe(across ? "3px" : "1px");
+          if (across) boundaries++;
+          else interior++;
         }
       }
     }
-    expect(checkedBoundary).toBe(true);
-    expect(checkedInterior).toBe(true);
+    expect(boundaries).toBeGreaterThan(0);
+    expect(interior).toBeGreaterThan(0);
   });
 
   it("uses a stable fish direction and marks conflicts distinctly", () => {
@@ -145,7 +153,87 @@ describe("board: grid and cells", () => {
     const stylesB = assignPondStyles(b.puzzle);
     for (let i = 0; i < cells.length; i++) {
       expect(cells[i].dataset.pond).toBe(String(b.puzzle.ponds[i]));
-      expect(cells[i].textContent).toBe(stylesB.textures[b.puzzle.ponds[i]]);
+      expect(cells[i].textContent).toBe(stylesB.textures[b.puzzle.ponds[i]].repeat(EMPTY_FILL));
     }
+  });
+});
+
+describe("board: click and drag", () => {
+  /** A board wired to a live state array, re-rendered on every reported change. */
+  function live(size = 7) {
+    const { puzzle } = fixture(size, "board-drag");
+    const cells: CellState[] = new Array(size * size).fill(CellState.EMPTY);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const controller = new BoardController(host, (i, next) => {
+      cells[i] = next;
+      controller.render({ size, cells });
+    });
+    controller.setPuzzle(puzzle);
+    controller.render({ size, cells });
+    const els = cellsOf(host);
+    const fire = (type: string, i: number, pointerId = 1) =>
+      els[i].dispatchEvent(
+        new PointerEvent(type, { bubbles: true, pointerId, pointerType: "mouse", button: 0 }),
+      );
+    const set = (i: number, s: CellState) => {
+      cells[i] = s;
+      controller.render({ size, cells });
+    };
+    return { cells, els, fire, set };
+  }
+
+  it("a press and release on one cell is a single tap", () => {
+    const b = live();
+    b.fire("pointerdown", 3);
+    b.fire("pointerup", 3);
+    expect(b.cells[3]).toBe(CellState.RULED_OUT);
+    // The browser's follow-up click (detail 1) must not cycle it again.
+    b.els[3].dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    expect(b.cells[3]).toBe(CellState.RULED_OUT);
+  });
+
+  it("dragging from an empty cell crosses off every empty cell passed, leaving fish alone", () => {
+    const b = live();
+    b.set(2, CellState.FISH);
+    b.fire("pointerdown", 0);
+    for (const i of [1, 2, 3, 10]) b.fire("pointerover", i);
+    b.fire("pointerup", 10);
+    expect([0, 1, 3, 10].map((i) => b.cells[i])).toEqual(new Array(4).fill(CellState.RULED_OUT));
+    expect(b.cells[2]).toBe(CellState.FISH);
+    expect(b.cells[4]).toBe(CellState.EMPTY);
+  });
+
+  it("dragging from an x erases the x marks passed", () => {
+    const b = live();
+    for (const i of [0, 1, 2]) b.set(i, CellState.RULED_OUT);
+    b.fire("pointerdown", 0);
+    b.fire("pointerover", 1);
+    b.fire("pointerover", 2);
+    b.fire("pointerover", 3); // empty: stays empty
+    b.fire("pointerup", 3);
+    expect([0, 1, 2, 3].map((i) => b.cells[i])).toEqual(new Array(4).fill(CellState.EMPTY));
+  });
+
+  it("a press that starts on a fish never paints", () => {
+    const b = live();
+    b.set(0, CellState.FISH);
+    b.fire("pointerdown", 0);
+    b.fire("pointerover", 1);
+    b.fire("pointerup", 1);
+    expect(b.cells[1]).toBe(CellState.EMPTY);
+  });
+
+  it("moving the mouse without a press paints nothing", () => {
+    const b = live();
+    b.fire("pointerover", 1);
+    b.fire("pointerover", 2);
+    expect(b.cells.every((s) => s === CellState.EMPTY)).toBe(true);
+  });
+
+  it("keyboard activation (click with detail 0) still cycles a cell", () => {
+    const b = live();
+    b.els[5].dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 }));
+    expect(b.cells[5]).toBe(CellState.RULED_OUT);
   });
 });

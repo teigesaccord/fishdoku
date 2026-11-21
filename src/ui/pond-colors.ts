@@ -3,11 +3,12 @@
  *
  * Pure logic (no DOM) so it can be unit-tested headlessly. Each pond gets one
  * character from the 11-texture list and one background tint from the 11-color
- * palette, chosen by greedy graph coloring over pond adjacency: every pond takes
- * the smallest texture/color index not used by an orthogonally-adjacent pond, so
- * neighboring ponds never share a texture or a color. Textures and colors are
- * colored independently as a defense in depth — if a pair of ponds is
- * indistinguishable by tint, their textures still differ.
+ * palette, chosen by greedy graph coloring over pond adjacency. Because there
+ * are exactly as many palette entries as the largest pond count (N <= 11), each
+ * pond ends up with its own unique texture and color, so ponds are easy to tell
+ * apart and adjacent ponds never share either. Textures and colors are assigned
+ * independently as a defense in depth: if two ponds were ever indistinguishable
+ * by tint, their textures would still differ (and vice versa).
  */
 
 import type { Puzzle } from "../core/puzzle";
@@ -46,10 +47,16 @@ function pondCount(ponds: number[]): number {
   return n;
 }
 
-/** Smallest index in [0, max) not present in `used`. */
-function firstFree(used: Set<number>, max: number): number {
+/** Smallest index in [0, max) not present in `used`, preferring `preferred` if free. */
+function firstFree(used: Set<number>, max: number, preferred: number): number {
+  // Prefer the pond's own index. Since ponds are colored in ascending order and
+  // a pond has at most four orthogonal neighbours (all with lower ids already
+  // fixed to their own index), `preferred` is normally free. That gives every
+  // pond a *unique* texture/color while still guaranteeing adjacent ponds
+  // differ, which makes pond boundaries easy to see.
+  if (preferred >= 0 && preferred < max && !used.has(preferred)) return preferred;
   for (let i = 0; i < max; i++) if (!used.has(i)) return i;
-  // Defensive: a planar pond graph is at most 4-colorable, so this never runs.
+  // Defensive fallback if there are ever more ponds than palette entries.
   return Math.min(used.size, max - 1);
 }
 
@@ -100,8 +107,8 @@ export function assignPondStyles(puzzle: Puzzle): PondStyles {
         usedC.add(colorIdx[other]);
       }
     });
-    textureIdx[pid] = firstFree(usedT, TEXTURES.length);
-    colorIdx[pid] = firstFree(usedC, POND_COLORS.length);
+    textureIdx[pid] = firstFree(usedT, TEXTURES.length, pid);
+    colorIdx[pid] = firstFree(usedC, POND_COLORS.length, pid);
   }
 
   return {

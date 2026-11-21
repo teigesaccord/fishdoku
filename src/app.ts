@@ -84,11 +84,13 @@ export function createApp(elements: AppElements): App {
     board.setPuzzle(currentPuzzle);
 
     const stored = readBoard(date);
-    if (stored) {
+    // A stored board of the wrong length (e.g. saved by the old, broken clear)
+    // cannot be mapped onto the grid, so start that date fresh instead.
+    if (stored && stored.cells.length === size * size) {
       cells = decodeCells(stored.cells);
       solved = stored.solved;
     } else {
-      cells = new Array(size * size).fill(CellState.EMPTY);
+      cells = emptyCells(size);
       solved = false;
     }
 
@@ -150,11 +152,20 @@ export function createApp(elements: AppElements): App {
     // loadDate(), so there is nothing else to do here.
   }
 
-  /** Reset the current board to empty and allow replay (used by the clear button). */
+  /** A fresh, untouched board for the current date: every cell empty. */
+  function emptyCells(size: number): CellState[] {
+    return new Array(size * size).fill(CellState.EMPTY);
+  }
+
+  /**
+   * Reset the current board to how the player started it and allow replay
+   * (used by the clear button). The board is N*N cells; resetting only N of
+   * them used to leave every row but the first untouched on screen.
+   */
   function clear(): void {
     solved = false;
     const size = puzzleSize(current);
-    cells = new Array(size).fill(CellState.EMPTY);
+    cells = emptyCells(size);
     persist();
     board.render({ size, cells }, { directionSeed: current });
     headerView.render(headerModel());
@@ -172,15 +183,18 @@ export function createApp(elements: AppElements): App {
       if (clearDeadline !== 0 && now <= clearDeadline) {
         clearDeadline = 0;
         clearBtn.textContent = "Clear";
+        delete clearBtn.dataset.confirm;
         handler();
         return;
       }
       clearDeadline = now + CLEAR_WINDOW_MS;
       clearBtn.textContent = "really clear?";
+      clearBtn.dataset.confirm = "";
       setTimeout(() => {
         if (clearDeadline !== 0 && Date.now() >= clearDeadline) {
           clearDeadline = 0;
           clearBtn.textContent = "Clear";
+          delete clearBtn.dataset.confirm;
         }
       }, CLEAR_WINDOW_MS);
     });

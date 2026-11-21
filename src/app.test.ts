@@ -165,6 +165,37 @@ describe("app: orchestration", () => {
     expect(readBoard(date)?.solved ?? false).toBe(false);
   });
 
+  it("clear resets every cell on every row, not just the first", () => {
+    const date = today();
+    const f = fresh();
+    f.app.start();
+    const size = puzzleSize(date);
+    const cellsEls = () => Array.from(f.boardRoot.querySelectorAll<HTMLButtonElement>(".board-cell"));
+    // Mark cells in the first, a middle and the last row.
+    setFish(f.boardRoot, 0);
+    setFish(f.boardRoot, Math.floor(size / 2) * size + 1);
+    setFish(f.boardRoot, size * size - 1);
+
+    f.app.clear();
+
+    expect(encoded(date)).toBe("0".repeat(size * size));
+    expect(cellsEls().every((el) => el.dataset.state === "empty")).toBe(true);
+    // The board is still fully playable after clearing.
+    setFish(f.boardRoot, size * size - 1);
+    expect(encoded(date)?.length).toBe(size * size);
+  });
+
+  it("a short board saved by the old clear loads as a fresh board", () => {
+    const date = today();
+    const f = fresh();
+    const size = puzzleSize(date);
+    writeBoard(date, { size, cells: new Array(size).fill(0), solved: false });
+    f.app.start();
+    const els = f.boardRoot.querySelectorAll<HTMLButtonElement>(".board-cell");
+    expect(els.length).toBe(size * size);
+    expect(Array.from(els).every((el) => el.dataset.state === "empty")).toBe(true);
+  });
+
   it("clear button: a lone tap reverts to 'Clear' after the window", () => {
     const f = fresh();
     f.app.start();

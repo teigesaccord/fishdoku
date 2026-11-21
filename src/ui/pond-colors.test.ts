@@ -57,6 +57,19 @@ describe("pond-colors: greedy adjacency coloring", () => {
     }
   });
 
+  it("gives every pond a unique texture and color (there are as many as ponds)", () => {
+    for (const size of [7, 9, 11]) {
+      for (let s = 0; s < 20; s++) {
+        const p = puzzle(size, `unique-${s}`);
+        const styles = assignPondStyles(p);
+        const n = Math.max(...p.ponds) + 1;
+        expect(n).toBe(size);
+        expect(new Set(styles.textures.slice(0, n)).size).toBe(n);
+        expect(new Set(styles.colors.slice(0, n)).size).toBe(n);
+      }
+    }
+  });
+
   it("stays within the declared palette and lists every pond id", () => {
     for (const size of [4, 7, 11]) {
       const p = puzzle(size, "bounds");

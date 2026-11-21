@@ -36,7 +36,11 @@ export function initWin(overlay: HTMLElement): WinView {
   const message = document.createElement("div");
   message.className = "fish-sub";
 
-  body.append(art, message);
+  const hint = document.createElement("p");
+  hint.className = "win-hint";
+  hint.textContent = "tap outside to close";
+
+  body.append(art, message, hint);
   overlay.appendChild(body);
 
   const view: WinView = {

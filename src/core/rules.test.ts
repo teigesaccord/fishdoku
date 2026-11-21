@@ -120,14 +120,22 @@ describe("isSolved()", () => {
     expect(isSolved(p, b)).toBe(true);
   });
 
-  it("reports a board with N fish but a conflict as not solved", () => {
-    // Two fish in row 0 forces a missing fish elsewhere; still N fish total.
+  it("is not solved with N fish when the row/column rule is broken", () => {
     const size = 6;
     const p = columnLayout(size);
-    // rows: 0->col0, 0->col1 (conflict), 1->2, 2->3, 3->4, 4->5, then 5 has none
-    // but that's only 5 distinct rows used with a repeat; add row5 fish too to keep count.
-    const cells = [idx(0, 0, size), idx(0, 1, size), idx(1, 2, size), idx(2, 3, size)];
-    const b = boardWithFish(size, cells); // 4 < 6 fish -> not solved anyway
+    // Exactly N fish, all in distinct columns and ponds, but two share row 0 and
+    // row 5 is empty: having N non-touching fish is not enough unless every row
+    // and every column holds exactly one.
+    const cells = [
+      idx(0, 0, size),
+      idx(0, 4, size),
+      idx(1, 1, size),
+      idx(2, 2, size),
+      idx(3, 3, size),
+      idx(4, 5, size),
+    ];
+    const b = boardWithFish(size, cells); // exactly N fish
+    expect(cells.length).toBe(size);
     expect(isSolved(p, b)).toBe(false);
   });
 });
