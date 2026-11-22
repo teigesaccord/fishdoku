@@ -271,3 +271,70 @@ describe("app: orchestration", () => {
     expect(f.app.currentDate()).not.toBe(start);
   });
 });
+
+describe("app: timer and share", () => {
+  function solve(f: ReturnType<typeof fresh>, date: string): void {
+    const size = puzzleSize(date);
+    const sol = singleSolution(generate("v1", seedForDate(date), size))!;
+    for (let r = 0; r < size; r++) setFish(f.boardRoot, r * size + sol[r]);
+  }
+
+  it("counts up while playing and records the solve time", () => {
+    const date = today();
+    const f = fresh();
+    f.app.start();
+    vi.advanceTimersByTime(83_000);
+    const timer = f.headerRoot.querySelector(".fish-timer")!;
+    expect(timer.textContent).toBe("1:23");
+
+    solve(f, date);
+    expect(readBoard(date)?.solvedMs).toBe(83_000);
+    expect(f.winOverlay.querySelector(".win-time")!.textContent).toContain("1:23");
+
+    // The clock stops once solved.
+    vi.advanceTimersByTime(10_000);
+    expect(timer.textContent).toBe("1:23");
+  });
+
+  it("keeps the official time when a solved board is cleared and replayed", () => {
+    const date = today();
+    const f = fresh();
+    f.app.start();
+    vi.advanceTimersByTime(60_000);
+    solve(f, date);
+    f.app.clear();
+    vi.advanceTimersByTime(5_000);
+    solve(f, date);
+    expect(readBoard(date)?.solvedMs).toBe(60_000);
+    expect(f.winOverlay.querySelector(".win-replay")!.textContent).toContain("0:05");
+  });
+
+  it("does not reset the clock when clearing an unsolved board", () => {
+    const date = today();
+    const f = fresh();
+    f.app.start();
+    vi.advanceTimersByTime(30_000);
+    f.app.clear();
+    vi.advanceTimersByTime(10_000);
+    solve(f, date);
+    expect(readBoard(date)?.solvedMs).toBe(40_000);
+  });
+
+  it("share copies a spoiler-free message with the time", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const date = today();
+    const f = fresh();
+    f.app.start();
+    vi.advanceTimersByTime(154_000);
+    solve(f, date);
+
+    const btn = f.winOverlay.querySelector<HTMLButtonElement>(".win-share")!;
+    btn.click();
+    await vi.waitFor(() => expect(btn.textContent).toBe("Copied!"));
+    const text = writeText.mock.calls[0][0] as string;
+    expect(text).toContain(`Fishdoku #${puzzleNumber(date)}`);
+    expect(text).toContain("2:34");
+    expect(text).toContain(`#/${date}`);
+  });
+});

@@ -46,6 +46,15 @@ describe("storage: key and round-trip", () => {
     expect(stored!.solved).toBe(true);
   });
 
+  it("round-trips timing fields and defaults them for older boards", () => {
+    writeBoard(ISO, { size: 7, cells: board(7, []), solved: true, elapsedMs: 61_234, solvedMs: 61_234 });
+    expect(readBoard(ISO)).toMatchObject({ elapsedMs: 61_234, solvedMs: 61_234 });
+
+    // A board saved before the timer existed has neither field.
+    window.localStorage.setItem(storageKey(ISO), JSON.stringify({ cells: "0".repeat(49), solved: false }));
+    expect(readBoard(ISO)).toMatchObject({ elapsedMs: 0, solvedMs: null });
+  });
+
   it("returns null for a date with no stored board", () => {
     expect(readBoard("2026-11-17")).toBeNull();
   });

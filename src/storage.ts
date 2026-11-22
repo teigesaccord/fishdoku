@@ -1,9 +1,13 @@
 /**
  * Board persistence for Fishdoku.
  *
- * Each day's board is stored as a JSON object `{ cells, solved }` under the key
- * `fishdoku:v1:board:<YYYY-MM-DD>`, where `cells` is a digit string of length
- * N*N ("0" empty, "1" ruled out, "2" fish) and `solved` marks completion.
+ * Each day's board is stored as a JSON object `{ cells, solved, elapsedMs,
+ * solvedMs }` under the key `fishdoku:v1:board:<YYYY-MM-DD>`, where `cells` is a
+ * digit string of length N*N ("0" empty, "1" ruled out, "2" fish), `solved`
+ * marks completion, `elapsedMs` is the time spent on the board so far, and
+ * `solvedMs` is the time of the first solve (kept even if the board is cleared
+ * and replayed, so a shared time can't be improved by replaying). The timing
+ * fields are optional on read so boards saved before the timer still load.
  *
  * Every localStorage access is wrapped in try/catch. If storage throws (blocked
  * cookies, private window quota errors, missing API), the wrapper falls back to
@@ -23,6 +27,10 @@ export interface StoredBoard {
   readonly cells: string;
   /** Whether the puzzle has been fully and correctly solved. */
   readonly solved: boolean;
+  /** Milliseconds spent on the board so far (0 if never timed). */
+  readonly elapsedMs: number;
+  /** Milliseconds taken by the first solve, or null if unsolved or untimed. */
+  readonly solvedMs: number | null;
 }
 
 /** The localStorage key for a given `YYYY-MM-DD` date. */
@@ -33,6 +41,13 @@ export function storageKey(date: string): string {
 interface StoredPayload {
   cells: string;
   solved: boolean;
+  elapsedMs?: number;
+  solvedMs?: number | null;
+}
+
+/** A finite, non-negative millisecond count, or null. */
+function validMs(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 /** In-memory fallback, keyed by the same localStorage key strings. */
@@ -88,14 +103,33 @@ export function readBoard(date: string): StoredBoard | null {
     // Decode then re-encode to validate the digit string and normalize it.
     const decoded = decodeCells(parsed.cells);
     const cells = encodeCells(decoded);
-    return { cells, solved: parsed.solved };
+    return {
+      cells,
+      solved: parsed.solved,
+      elapsedMs: validMs(parsed.elapsedMs) ?? 0,
+      solvedMs: validMs(parsed.solvedMs),
+    };
   } catch {
     return null; // corrupt payload -> treat as missing
   }
 }
 
 /** Persist a board on every change, falling back to memory if localStorage fails. */
-export function writeBoard(date: string, board: { readonly size: number; readonly cells: CellState[]; readonly solved: boolean }): void {
-  const payload = JSON.stringify({ cells: encodeCells(board.cells), solved: board.solved });
+export function writeBoard(
+  date: string,
+  board: {
+    readonly size: number;
+    readonly cells: CellState[];
+    readonly solved: boolean;
+    readonly elapsedMs?: number;
+    readonly solvedMs?: number | null;
+  },
+): void {
+  const payload = JSON.stringify({
+    cells: encodeCells(board.cells),
+    solved: board.solved,
+    elapsedMs: Math.round(board.elapsedMs ?? 0),
+    solvedMs: board.solvedMs == null ? null : Math.round(board.solvedMs),
+  });
   writeRaw(storageKey(date), payload);
 }

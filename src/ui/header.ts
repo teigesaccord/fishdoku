@@ -1,9 +1,12 @@
 /**
- * Header view: ASCII title, puzzle number + date, a solved badge, and wired
+ * Header view: ASCII title, puzzle number + date, a running timer, a solved
+ * badge (tappable to reopen the win/share screen), and wired
  * prev/next buttons disabled at the available bounds. Navigation itself lives in
  * main (via the router); this module only reports tap events so it stays small
  * and testable. The clear button's two-tap confirmation lives in main too (8.2).
  */
+
+import { formatTime } from "../share";
 
 /** Decorative ASCII fish used as the app title. */
 const TITLE_ART = "<<<[~fish~]>>>";
@@ -33,6 +36,10 @@ export interface HeaderView {
   onPrev(handler: () => void): void;
   /** Register a handler fired when the next-day button is tapped. */
   onNext(handler: () => void): void;
+  /** Update the timer readout (called every tick, so it touches only the timer). */
+  setTime(ms: number | null): void;
+  /** Register a handler fired when the solved badge is tapped. */
+  onSolvedTap(handler: () => void): void;
 }
 
 /** Build the header once and return it for later state updates. */
@@ -44,17 +51,24 @@ export function initHeader(root: HTMLElement, controls: HeaderControls): HeaderV
   const sub = document.createElement("p");
   sub.className = "fish-sub";
 
-  const solvedBadge = document.createElement("div");
+  const timer = document.createElement("div");
+  timer.className = "fish-timer";
+  timer.setAttribute("aria-label", "Elapsed time");
+  timer.setAttribute("role", "timer");
+
+  const solvedBadge = document.createElement("button");
+  solvedBadge.type = "button";
   solvedBadge.className = "solved-badge";
+  solvedBadge.title = "Show result & share";
   solvedBadge.hidden = true;
 
-  root.append(title, sub, solvedBadge);
+  root.append(title, sub, timer, solvedBadge);
 
   const view: HeaderView = {
     render(model: HeaderModel) {
       sub.textContent = `Puzzle #${model.number} · ${model.date}`;
       solvedBadge.hidden = !model.solved;
-      solvedBadge.textContent = model.solved ? "SOLVED ✓" : "";
+      solvedBadge.textContent = model.solved ? "SOLVED ✓ · SHARE" : "";
       controls.prevBtn.disabled = !model.canPrev;
       controls.nextBtn.disabled = !model.canNext;
     },
@@ -63,6 +77,13 @@ export function initHeader(root: HTMLElement, controls: HeaderControls): HeaderV
     },
     onNext(handler: () => void) {
       controls.nextBtn.addEventListener("click", handler);
+    },
+    setTime(ms: number | null) {
+      const text = ms === null ? "" : formatTime(ms);
+      if (timer.textContent !== text) timer.textContent = text;
+    },
+    onSolvedTap(handler: () => void) {
+      solvedBadge.addEventListener("click", handler);
     },
   };
 

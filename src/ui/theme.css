@@ -95,16 +95,31 @@ body {
   margin: 0;
 }
 
+.fish-timer {
+  margin-top: 8px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  min-height: 1.3em;
+}
+
 .solved-badge {
   display: inline-block;
-  margin-top: 10px;
+  margin-top: 6px;
   padding: 3px 10px;
+  border: none;
   border-radius: 999px;
   background: var(--fish-soft);
   color: var(--fish);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
+}
+
+.solved-badge:hover {
+  filter: brightness(0.95);
 }
 
 .solved-badge[hidden] {
@@ -360,6 +375,38 @@ button:disabled {
   font-size: 1.4rem;
   line-height: 1.2;
   color: var(--fish);
+}
+
+.win-time {
+  margin-top: 14px;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.win-time[hidden],
+.win-replay[hidden] {
+  display: none;
+}
+
+.win-replay {
+  margin-top: 4px;
+}
+
+.win-share {
+  margin-top: 16px;
+  min-width: 140px;
+  height: 42px;
+  border: none;
+  background: var(--fish);
+  color: var(--panel);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.win-share:hover {
+  filter: brightness(1.08);
 }
 
 .win-hint {

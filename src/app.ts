@@ -28,6 +28,10 @@ import type { HeaderModel } from "./ui/header";
 import { initHeader } from "./ui/header";
 import { initWin } from "./ui/win";
 import type { WinModel } from "./ui/win";
+import { copyToClipboard, shareText } from "./share";
+
+/** How often the on-screen timer is refreshed. */
+const TICK_MS = 250;
 
 /** The DOM elements the app owns, collected by the entry point. */
 export interface AppElements {
@@ -68,6 +72,20 @@ export function createApp(elements: AppElements): App {
   winView.onDismiss(() => {
     if (solved) hideAndLockSolved();
   });
+  winView.onShare(() =>
+    copyToClipboard(
+      shareText({
+        number: puzzleNumber(current),
+        date: current,
+        size: puzzleSize(current),
+        solvedMs,
+        baseUrl: window.location.origin + window.location.pathname,
+      }),
+    ),
+  );
+  headerView.onSolvedTap(() => {
+    if (solved) showWin();
+  });
 
   /** The player's board for the current date, plus whether it is solved. */
   let cells: CellState[] = [];
@@ -76,8 +94,46 @@ export function createApp(elements: AppElements): App {
   /** The puzzle backing `current`; cached so taps never regenerate a size-11 grid. */
   let currentPuzzle: Puzzle | null = null;
 
+  // Solve timer. Time accrues only while the current date is on screen, unsolved
+  // and the tab is visible; it is persisted with the board so reloads and
+  // switching days pick up where the player left off.
+  /** Time banked on this board, excluding the segment currently running. */
+  let elapsedMs = 0;
+  /** `Date.now()` when the running segment started, or null while paused. */
+  let runningSince: number | null = null;
+  /** The official first-solve time; replays after a clear never change it. */
+  let solvedMs: number | null = null;
+
+  /** Total time on this board including the running segment. */
+  function totalElapsed(): number {
+    return elapsedMs + (runningSince === null ? 0 : Date.now() - runningSince);
+  }
+
+  /** Bank the running segment and stop the clock. */
+  function pauseClock(): void {
+    elapsedMs = totalElapsed();
+    runningSince = null;
+  }
+
+  /** Start the clock if the board is unsolved and the page is visible. */
+  function resumeClock(): void {
+    if (solved || runningSince !== null) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    runningSince = Date.now();
+  }
+
+  /** Refresh the header readout: live time while playing, official time once solved. */
+  function renderTime(): void {
+    headerView.setTime(solved ? solvedMs : totalElapsed());
+  }
+
   /** Build and load the puzzle + board for a specific playable date. */
   function loadDate(date: string): void {
+    // Bank and save the time spent on the date we are leaving.
+    if (current !== "") {
+      pauseClock();
+      persist();
+    }
     current = date;
     const size = puzzleSize(date);
     currentPuzzle = generate("v1", seedForDate(date), size);
@@ -89,13 +145,20 @@ export function createApp(elements: AppElements): App {
     if (stored && stored.cells.length === size * size) {
       cells = decodeCells(stored.cells);
       solved = stored.solved;
+      elapsedMs = stored.elapsedMs;
+      solvedMs = stored.solvedMs;
     } else {
       cells = emptyCells(size);
       solved = false;
+      elapsedMs = 0;
+      solvedMs = null;
     }
+    runningSince = null;
+    resumeClock();
 
     board.render({ size, cells }, { directionSeed: current });
     headerView.render(headerModel());
+    renderTime();
     // A date that was already solved shows the solved board and the header
     // indicator, but does NOT replay the win overlay (spec: revisit a solved
     // puzzle without replaying the win screen; task 8.3).
@@ -113,13 +176,24 @@ export function createApp(elements: AppElements): App {
   }
 
   /** Show the win overlay for the solved board. */
-  function showWin(): void {
-    winView.show({ date: current, number: puzzleNumber(current) } satisfies WinModel);
+  function showWin(replayMs: number | null = null): void {
+    winView.show({
+      date: current,
+      number: puzzleNumber(current),
+      solvedMs,
+      replayMs,
+    } satisfies WinModel);
   }
 
   /** Persist the current board to storage. */
   function persist(): void {
-    writeBoard(current, { size: puzzleSize(current), cells, solved });
+    writeBoard(current, {
+      size: puzzleSize(current),
+      cells,
+      solved,
+      elapsedMs: totalElapsed(),
+      solvedMs,
+    });
   }
 
   /** Handle a tap that advances `index` to `nextState`; only acts when unsolved. */
@@ -137,11 +211,14 @@ export function createApp(elements: AppElements): App {
     const size = currentPuzzle?.size ?? puzzleSize(current);
     const pondLayout = currentPuzzle?.ponds ?? new Array(size).fill(0);
     if (isSolved({ size, ponds: pondLayout }, { size, cells })) {
+      pauseClock();
       solved = true;
+      if (solvedMs === null) solvedMs = elapsedMs;
       persist();
       board.render({ size, cells }, { directionSeed: current });
       headerView.render(headerModel());
-      showWin();
+      renderTime();
+      showWin(elapsedMs);
     }
   }
 
@@ -163,12 +240,21 @@ export function createApp(elements: AppElements): App {
    * them used to leave every row but the first untouched on screen.
    */
   function clear(): void {
+    // Clearing mid-attempt keeps the clock running (no free restarts). Once the
+    // puzzle has been solved, a clear starts a fresh, unofficial replay timer;
+    // the official solvedMs is untouched.
+    if (solvedMs !== null) {
+      elapsedMs = 0;
+      runningSince = null;
+    }
     solved = false;
+    resumeClock();
     const size = puzzleSize(current);
     cells = emptyCells(size);
     persist();
     board.render({ size, cells }, { directionSeed: current });
     headerView.render(headerModel());
+    renderTime();
     winView.hide();
   }
 
@@ -237,6 +323,21 @@ export function createApp(elements: AppElements): App {
       window.addEventListener("hashchange", handleUrl);
       // pushState is silent across browsers; popstate covers browser back/forward.
       window.addEventListener("popstate", handleUrl);
+      // Pause while the tab is hidden and save on the way out so closing the
+      // tab neither loses time nor keeps counting.
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          pauseClock();
+          persist();
+        } else {
+          resumeClock();
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        pauseClock();
+        persist();
+      });
+      setInterval(renderTime, TICK_MS);
     },
     clear,
     onClearTap,
