@@ -8,6 +8,7 @@
   </head>
   <body>
     <div id="app">
+      <button type="button" id="help-btn" aria-label="How to play">? How to play</button>
       <header id="fishdoku-header"></header>
       <main id="fishdoku-main">
         <div id="board-container">
@@ -20,6 +21,7 @@
         </div>
       </main>
       <div id="win-overlay" class="win-hidden" role="dialog" aria-label="You won!"></div>
+      <div id="help-overlay" class="win-hidden" role="dialog" aria-modal="true"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

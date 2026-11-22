@@ -9,6 +9,7 @@
 
 import "./ui/theme.css";
 import { createApp } from "./app";
+import { initHelp } from "./ui/help";
 
 const getElement = (id: string): HTMLElement => {
   const el = document.getElementById(id);
@@ -34,3 +35,5 @@ const runtime = createApp(collect());
 runtime.onClearTap(() => runtime.clear());
 
 runtime.start();
+
+initHelp(getElement("help-overlay"), getElement("help-btn") as HTMLButtonElement);
