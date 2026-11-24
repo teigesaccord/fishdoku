@@ -20,6 +20,17 @@ describe("help overlay", () => {
     expect(overlay.textContent).toContain("not even diagonally");
   });
 
+  it("includes a Deep Water section with the layer, pillar and touching rules", () => {
+    const { overlay, btn } = setup();
+    btn.click();
+    const text = overlay.textContent ?? "";
+    expect(text).toContain("Deep Water");
+    expect(text).toContain("two 8×8 layers");
+    expect(text).toContain("One fish per pillar");
+    expect(text).toContain("No touching through the water");
+    expect(overlay.querySelector(".help-shadow pre")?.textContent).toContain("x x x");
+  });
+
   it("closes via Got it, the backdrop and Escape", () => {
     const { overlay, btn, view } = setup();
     btn.click();

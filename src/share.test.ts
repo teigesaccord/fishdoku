@@ -27,3 +27,25 @@ describe("share: shareText", () => {
     expect(shareText({ ...base, solvedMs: null })).not.toContain("⏱️");
   });
 });
+
+describe("share: Deep Water shareText", () => {
+  it("names the mode, number and tank size, with time and a Deep link", () => {
+    const text = shareText({
+      mode: "deep",
+      number: 3,
+      date: "2026-11-25",
+      size: 8,
+      solvedMs: 724_000,
+      baseUrl: "https://teige.dev/fishdoku/",
+    });
+    expect(text).toContain("Fishdoku Deep #3");
+    expect(text).toContain("2×8×8");
+    expect(text).toContain("12:04");
+    expect(text.split("\n").at(-1)).toBe("https://teige.dev/fishdoku/#/deep/2026-11-25");
+  });
+
+  it("never includes board glyphs that could reveal fish positions", () => {
+    const text = shareText({ mode: "deep", number: 1, date: "2026-11-23", size: 8, solvedMs: 1, baseUrl: "x/" });
+    expect(text).not.toMatch(/><>|<></);
+  });
+});

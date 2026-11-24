@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   LAUNCH_DATE,
   WEEKDAY_SIZE,
@@ -14,6 +14,18 @@ import {
   clampDate,
   canPrev,
   canNext,
+  DEEP_LAUNCH_DATE,
+  DEEP_SIZE,
+  DEEP_VERSION_TABLE,
+  launchDate,
+  sizeFor,
+  numberFor,
+  versionFor,
+  seedFor,
+  isPlayable,
+  clampDateFor,
+  canPrevFor,
+  canNextFor,
 } from "./daily";
 
 const ISO = "2026-11-16"; // Launch Monday.
@@ -162,5 +174,70 @@ describe("core/daily: bounds and clamping", () => {
     if (daysSinceLaunch(ISO) < daysSinceLaunch(today())) {
       expect(canNext(ISO)).toBe(true);
     }
+  });
+});
+
+describe("core/daily: Deep Water mode", () => {
+  // Fix "today" well after the Deep launch so every helper has room to move.
+  const TODAY = "2027-01-15";
+  beforeEach(() => {
+    vi.useFakeTimers();
+    const [y, m, d] = TODAY.split("-").map(Number);
+    vi.setSystemTime(new Date(y, m - 1, d, 12));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses 8 x 8 layers on every weekday", () => {
+    // 2026-11-23 is a Monday; cover a full week.
+    for (let i = 0; i < 7; i++) {
+      const date = `2026-11-${String(23 + i).padStart(2, "0")}`;
+      expect(sizeFor("deep", date)).toBe(DEEP_SIZE);
+    }
+    expect(DEEP_SIZE).toBe(8);
+  });
+
+  it("numbers Deep puzzles from #1 on its own launch day", () => {
+    expect(numberFor("deep", DEEP_LAUNCH_DATE)).toBe(1);
+    const [y, m, d] = DEEP_LAUNCH_DATE.split("-").map(Number);
+    const after = new Date(y, m - 1, d + 1);
+    const afterIso = `${after.getFullYear()}-${String(after.getMonth() + 1).padStart(2, "0")}-${String(after.getDate()).padStart(2, "0")}`;
+    expect(numberFor("deep", afterIso)).toBe(2);
+  });
+
+  it("seeds Deep tanks with their own versioned prefix", () => {
+    expect(versionFor("deep", "2026-12-04")).toBe("deep-v1");
+    expect(seedFor("deep", "2026-12-04")).toBe("fishdoku:deep-v1:2026-12-04");
+    expect(DEEP_VERSION_TABLE[0]).toEqual({ from: DEEP_LAUNCH_DATE, version: "deep-v1" });
+  });
+
+  it("clamps invalid, future and pre-launch Deep dates to today", () => {
+    expect(clampDateFor("deep", "2026-12-04")).toBe("2026-12-04");
+    expect(clampDateFor("deep", "2999-01-01")).toBe(TODAY);
+    expect(clampDateFor("deep", "2026-11-16")).toBe(TODAY); // classic launch, before Deep launch
+    expect(clampDateFor("deep", "nonsense")).toBe(TODAY);
+    expect(isPlayable("deep", "2026-11-16")).toBe(false);
+    expect(isPlayable("classic", "2026-11-16")).toBe(true);
+  });
+
+  it("stops Deep navigation at its launch day and at today", () => {
+    expect(canPrevFor("deep", DEEP_LAUNCH_DATE)).toBe(false);
+    expect(canPrevFor("deep", "2026-12-04")).toBe(true);
+    expect(canNextFor("deep", TODAY)).toBe(false);
+    expect(canNextFor("deep", "2026-12-04")).toBe(true);
+  });
+
+  it("leaves classic helpers unchanged through the mode-aware wrappers", () => {
+    for (const date of ["2026-11-16", "2026-11-20", "2026-12-04"]) {
+      expect(sizeFor("classic", date)).toBe(puzzleSize(date));
+      expect(numberFor("classic", date)).toBe(puzzleNumber(date));
+      expect(seedFor("classic", date)).toBe(seedForDate(date));
+      expect(clampDateFor("classic", date)).toBe(clampDate(date));
+      expect(canPrevFor("classic", date)).toBe(canPrev(date));
+      expect(canNextFor("classic", date)).toBe(canNext(date));
+    }
+    expect(launchDate("classic")).toBe(LAUNCH_DATE);
+    expect(launchDate("deep")).toBe(DEEP_LAUNCH_DATE);
   });
 });

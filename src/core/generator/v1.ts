@@ -83,7 +83,7 @@ function placeFishPermutation(rng: Rng, size: number): number[] {
  * until every cell is assigned. Ponds stay contiguous and non-empty by
  * construction, so there are exactly N of them covering the whole grid.
  */
-function growPonds(rng: Rng, size: number, fishCols: number[]): number[] {
+export function growPonds(rng: Rng, size: number, fishCols: number[]): number[] {
   const ponds = new Int32Array(size * size).fill(-1);
   const assigned = new Uint8Array(size * size);
   for (let r = 0; r < size; r++) {
@@ -176,7 +176,7 @@ function repair(puzzle: Puzzle, keepCols: number[], killCols: number[]): boolean
 }
 
 /** Whether removing a cell from `pondId` leaves it empty or disconnected. */
-function pondsHasEmptyOrDisconnected(
+export function pondsHasEmptyOrDisconnected(
   pondOf: number[],
   size: number,
   pondId: number,

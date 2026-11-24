@@ -18,6 +18,8 @@ export interface WinModel {
   readonly solvedMs: number | null;
   /** This attempt's time in ms when it differs from the official one (a replay). */
   readonly replayMs?: number | null;
+  /** Which daily puzzle was solved; Classic when omitted. */
+  readonly mode?: "classic" | "deep";
 }
 
 /** How long the "Copied!" confirmation stays on the Share button. */
@@ -82,7 +84,8 @@ export function initWin(overlay: HTMLElement): WinView {
 
   const view: WinView = {
     show(model: WinModel) {
-      message.textContent = `Puzzle #${model.number} (${model.date}) solved!`;
+      const name = model.mode === "deep" ? "Deep" : "Puzzle";
+      message.textContent = `${name} #${model.number} (${model.date}) solved!`;
       time.textContent = model.solvedMs !== null ? `⏱️ ${formatTime(model.solvedMs)}` : "";
       time.hidden = model.solvedMs === null;
       const isReplay = model.replayMs != null && model.replayMs !== model.solvedMs;

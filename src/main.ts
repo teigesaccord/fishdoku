@@ -25,6 +25,7 @@ function collect() {
     nextBtn: getElement("next-day") as HTMLButtonElement,
     clearBtn: getElement("clear-btn") as HTMLButtonElement,
     winOverlay: getElement("win-overlay"),
+    deepRoot: getElement("deep-board"),
   };
 }
 

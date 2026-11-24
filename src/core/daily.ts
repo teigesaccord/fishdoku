@@ -132,3 +132,89 @@ export function canPrev(dateString: string): boolean {
 export function canNext(dateString: string): boolean {
   return daysSinceLaunch(dateString) < daysSinceLaunch(today());
 }
+
+// ---------------------------------------------------------------------------
+// Deep Water mode. Parallel constants and mode-aware helpers; the classic
+// functions above keep their signatures and outputs.
+
+/** Which daily puzzle is being played. */
+export type Mode = "classic" | "deep";
+
+/** The first playable Deep Water day (the day the mode is released). Fixed after release. */
+export const DEEP_LAUNCH_DATE = "2026-11-23";
+
+/** Deep Water layer size: 8 x 8 every day (see the deep-water-mode design). */
+export const DEEP_SIZE = 8;
+
+/** Deep Water generator versions, oldest first; same lookup rule as `VERSION_TABLE`. */
+export const DEEP_VERSION_TABLE: ReadonlyArray<{ readonly from: string; readonly version: string }> =
+  [{ from: DEEP_LAUNCH_DATE, version: "deep-v1" }];
+
+/** The first playable day for a mode. */
+export function launchDate(mode: Mode): string {
+  return mode === "deep" ? DEEP_LAUNCH_DATE : LAUNCH_DATE;
+}
+
+/** Whole local calendar days from `from` to `to` (both `YYYY-MM-DD`). */
+function daysBetween(from: string, to: string): number {
+  const [y1, m1, d1] = from.split("-").map(Number);
+  const [y2, m2, d2] = to.split("-").map(Number);
+  return Math.floor((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / MS_PER_DAY);
+}
+
+/** Days since a mode's launch for a valid date; zero on launch day. */
+function daysSinceModeLaunch(mode: Mode, dateString: string): number {
+  const p = parseDate(dateString);
+  if (!p) throw new Error(`invalid date: ${dateString}`);
+  return daysBetween(launchDate(mode), p);
+}
+
+/** Puzzle (layer) size for a mode and date. */
+export function sizeFor(mode: Mode, dateString: string): number {
+  return mode === "deep" ? DEEP_SIZE : puzzleSize(dateString);
+}
+
+/** Puzzle number for a mode and date: #1 on that mode's launch day. */
+export function numberFor(mode: Mode, dateString: string): number {
+  return mode === "deep" ? daysSinceModeLaunch(mode, dateString) + 1 : puzzleNumber(dateString);
+}
+
+/** The generator version in effect for a mode and date. */
+export function versionFor(mode: Mode, dateString: string): string {
+  if (mode === "classic") return versionForDate(dateString);
+  const p = parseDate(dateString);
+  if (!p) throw new Error(`invalid date: ${dateString}`);
+  let chosen = DEEP_VERSION_TABLE[0].version;
+  for (const entry of DEEP_VERSION_TABLE) if (entry.from <= p) chosen = entry.version;
+  return chosen;
+}
+
+/** Deterministic seed for a mode and date, e.g. `fishdoku:deep-v1:2026-12-04`. */
+export function seedFor(mode: Mode, dateString: string): string {
+  return mode === "classic" ? seedForDate(dateString) : `${SEED_PREFIX}:${versionFor(mode, dateString)}:${dateString}`;
+}
+
+/** Whether a valid date has a puzzle in a mode (on or after launch, not after today). */
+export function isPlayable(mode: Mode, dateString: string): boolean {
+  const p = parseDate(dateString);
+  if (!p) return false;
+  const since = daysSinceModeLaunch(mode, p);
+  return since >= 0 && daysBetween(p, today()) >= 0;
+}
+
+/** Like `clampDate`, for a mode: invalid, future or pre-launch input resolves to today. */
+export function clampDateFor(mode: Mode, input: string | null | undefined): string {
+  if (mode === "classic") return clampDate(input);
+  const p = parseDate(input);
+  return p && isPlayable(mode, p) ? p : today();
+}
+
+/** Whether an earlier playable puzzle exists in a mode. */
+export function canPrevFor(mode: Mode, dateString: string): boolean {
+  return mode === "classic" ? canPrev(dateString) : daysSinceModeLaunch(mode, dateString) > 0;
+}
+
+/** Whether a later playable puzzle exists in a mode. */
+export function canNextFor(mode: Mode, dateString: string): boolean {
+  return mode === "classic" ? canNext(dateString) : daysBetween(dateString, today()) > 0;
+}

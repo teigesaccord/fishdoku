@@ -5,6 +5,9 @@ import { generate } from "./core/generator";
 import { singleSolution } from "./core/solver";
 import { readBoard, writeBoard } from "./storage";
 import { today, puzzleNumber, seedForDate, puzzleSize, canNext, canPrev, LAUNCH_DATE } from "./core/daily";
+import { DEEP_LAUNCH_DATE, numberFor, seedFor, sizeFor, versionFor } from "./core/daily";
+import { generateDeep } from "./core/deep/generator";
+import { findDeepSolutions } from "./core/deep/solver";
 
 /** Fresh DOM + storage for one app instance. */
 function fresh() {
@@ -336,5 +339,173 @@ describe("app: timer and share", () => {
     expect(text).toContain(`Fishdoku #${puzzleNumber(date)}`);
     expect(text).toContain("2:34");
     expect(text).toContain(`#/${date}`);
+  });
+});
+
+describe("app: Deep Water mode", () => {
+  /** Fresh DOM + app opened at a given hash; storage is kept unless `wipe`. */
+  function openAt(hash: string, wipe = true) {
+    if (wipe) window.localStorage.clear();
+    window.location.hash = hash;
+    const boardRoot = el("board", "board");
+    const deepRoot = el("deep-board");
+    const headerRoot = el("fishdoku-header");
+    const clearBtn = button("clear-btn");
+    const prevBtn = button("prev-day");
+    const nextBtn = button("next-day");
+    const winOverlay = el("win-overlay", "win-hidden");
+    const app = createApp({ boardRoot, deepRoot, headerRoot, clearBtn, prevBtn, nextBtn, winOverlay });
+    return { app, boardRoot, deepRoot, headerRoot, clearBtn, prevBtn, nextBtn, winOverlay };
+  }
+
+  /** The tank's unique solution as flat indices of its 2N fish. */
+  function tankFish(date: string): number[] {
+    const size = sizeFor("deep", date);
+    const tank = generateDeep(versionFor("deep", date), seedFor("deep", date), size);
+    const [sol] = findDeepSolutions(tank, 1);
+    const out: number[] = [];
+    sol.forEach((cols, L) => cols.forEach((c, r) => out.push(L * size * size + r * size + c)));
+    return out;
+  }
+
+  function deepCells(root: HTMLElement): HTMLButtonElement[] {
+    return Array.from(root.querySelectorAll<HTMLButtonElement>("button.board-cell"));
+  }
+
+  it("opens a Deep link: two 8 x 8 layers, labeled Deep #K", () => {
+    const date = today();
+    const f = openAt(`#/deep/${date}`);
+    f.app.start();
+    expect(f.app.currentMode()).toBe("deep");
+    expect(f.deepRoot.hidden).toBe(false);
+    expect(f.boardRoot.hidden).toBe(true);
+    expect(deepCells(f.deepRoot).length).toBe(2 * 64);
+    expect(f.deepRoot.querySelectorAll(".deep-layer").length).toBe(2);
+    const sub = f.headerRoot.querySelector(".fish-sub")!;
+    expect(sub.textContent).toBe(`Deep #${numberFor("deep", date)} · ${date}`);
+  });
+
+  it("saves Deep progress separately and restores it on reload", () => {
+    const date = today();
+    const f = openAt(`#/deep/${date}`);
+    f.app.start();
+    vi.advanceTimersByTime(7_000);
+    const deepIndex = 64 + 9; // deep layer, row 1, col 1
+    // (Earlier tests' app instances may have saved a Classic board for today, so
+    // compare it before and after rather than expecting none.)
+    const classicBefore = JSON.stringify(readBoard(date));
+    setFish(f.deepRoot, deepIndex);
+    expect(readBoard(date, "deep")!.cells[deepIndex]).toBe("2");
+    expect(JSON.stringify(readBoard(date))).toBe(classicBefore); // Classic untouched
+
+    window.dispatchEvent(new Event("pagehide"));
+    const g = openAt(`#/deep/${date}`, false);
+    g.app.start();
+    expect(deepCells(g.deepRoot)[deepIndex].dataset.state).toBe("fish");
+    const timer = g.headerRoot.querySelector(".fish-timer")!;
+    expect(timer.textContent).toBe("0:07");
+  });
+
+  it("solving the tank stops the timer, locks the board and shows the win screen", () => {
+    const date = today();
+    const f = openAt(`#/deep/${date}`);
+    f.app.start();
+    vi.advanceTimersByTime(65_000);
+    for (const i of tankFish(date)) setFish(f.deepRoot, i);
+
+    expect(readBoard(date, "deep")).toMatchObject({ solved: true, solvedMs: 65_000 });
+    expect(f.winOverlay.classList.contains("win-hidden")).toBe(false);
+    expect(f.winOverlay.textContent).toContain(`Deep #${numberFor("deep", date)}`);
+    vi.advanceTimersByTime(10_000);
+    expect(f.headerRoot.querySelector(".fish-timer")!.textContent).toBe("1:05");
+
+    // Locked: tapping an empty cell does nothing.
+    const empty = deepCells(f.deepRoot).findIndex((c) => c.dataset.state === "empty");
+    deepCells(f.deepRoot)[empty].dispatchEvent(new Event("click"));
+    expect(deepCells(f.deepRoot)[empty].dataset.state).toBe("empty");
+  });
+
+  it("revisits a solved tank without replaying the win screen", () => {
+    const date = today();
+    const fish = new Set(tankFish(date));
+    const cells = Array.from({ length: 128 }, (_, i) => (fish.has(i) ? CellState.FISH : CellState.EMPTY));
+    const f = openAt(`#/deep/${date}`);
+    writeBoard(date, { size: 8, cells, solved: true, solvedMs: 1_000 }, "deep");
+    f.app.start();
+    expect(f.winOverlay.classList.contains("win-hidden")).toBe(true);
+    expect((f.headerRoot.querySelector(".solved-badge") as HTMLElement).hidden).toBe(false);
+  });
+
+  it("clear resets every cell of both layers", () => {
+    const date = today();
+    const f = openAt(`#/deep/${date}`);
+    f.app.start();
+    for (const i of [0, 63, 64 + 10, 64 + 63]) setFish(f.deepRoot, i);
+    f.app.clear();
+    expect(readBoard(date, "deep")!.cells).toBe("0".repeat(128));
+    expect(deepCells(f.deepRoot).every((c) => c.dataset.state === "empty")).toBe(true);
+  });
+
+  it("shows a cross-layer conflict on both fish", () => {
+    const f = openAt(`#/deep/${today()}`);
+    f.app.start();
+    setFish(f.deepRoot, 4 * 8 + 4); // surface (4,4)
+    setFish(f.deepRoot, 64 + 4 * 8 + 4); // deep (4,4): same pillar
+    const cells = deepCells(f.deepRoot);
+    expect(cells[4 * 8 + 4].dataset.conflict).toBe("conflict");
+    expect(cells[64 + 4 * 8 + 4].dataset.conflict).toBe("conflict");
+  });
+
+  it("opens Classic by default when there is no hash", () => {
+    const f = openAt("");
+    f.app.start();
+    expect(f.app.currentMode()).toBe("classic");
+    expect(f.app.currentDate()).toBe(today());
+    expect(f.boardRoot.hidden).toBe(false);
+  });
+
+  it("switching to Deep keeps a playable date, and the header switch drives it", () => {
+    const date = today();
+    const f = openAt(`#/${date}`);
+    f.app.start();
+    const deepBtn = f.headerRoot.querySelector<HTMLButtonElement>('.mode-btn[data-mode="deep"]')!;
+    deepBtn.click();
+    expect(f.app.currentMode()).toBe("deep");
+    expect(f.app.currentDate()).toBe(date);
+    expect(window.location.hash).toBe(`#/deep/${date}`);
+    expect(deepBtn.getAttribute("aria-pressed")).toBe("true");
+
+    f.headerRoot.querySelector<HTMLButtonElement>('.mode-btn[data-mode="classic"]')!.click();
+    expect(f.app.currentMode()).toBe("classic");
+    expect(window.location.hash).toBe(`#/${date}`);
+  });
+
+  it("switching to Deep from a date before its launch goes to today's tank", () => {
+    const f = openAt(`#/${LAUNCH_DATE}`); // classic launch, before Deep launch
+    f.app.start();
+    expect(f.app.currentDate()).toBe(LAUNCH_DATE);
+    f.app.switchMode("deep");
+    expect(f.app.currentMode()).toBe("deep");
+    expect(f.app.currentDate()).toBe(today());
+  });
+
+  it("Deep prev is disabled on the Deep launch day", () => {
+    const f = openAt(`#/deep/${DEEP_LAUNCH_DATE}`);
+    f.app.start();
+    expect(f.app.currentDate()).toBe(DEEP_LAUNCH_DATE);
+    expect(f.prevBtn.disabled).toBe(true);
+  });
+
+  it("solving Classic leaves the same date's Deep tank empty and unsolved", () => {
+    const date = today();
+    const size = puzzleSize(date);
+    const sol = singleSolution(generate("v1", seedForDate(date), size))!;
+    const f = openAt(`#/${date}`);
+    f.app.start();
+    for (let r = 0; r < size; r++) setFish(f.boardRoot, r * size + sol[r]);
+    expect(readBoard(date)!.solved).toBe(true);
+    f.app.switchMode("deep");
+    expect(deepCells(f.deepRoot).every((c) => c.dataset.state === "empty")).toBe(true);
+    expect((f.headerRoot.querySelector(".solved-badge") as HTMLElement).hidden).toBe(true);
   });
 });

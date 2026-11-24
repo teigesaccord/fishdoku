@@ -158,6 +158,50 @@ describe("board: grid and cells", () => {
   });
 });
 
+describe("board: conflict override and pillar highlight", () => {
+  it("uses a given conflict set instead of the classic rule check", () => {
+    const { puzzle, board } = fixture(8, "board-override");
+    const controller = new BoardController(root, () => {});
+    controller.setPuzzle(puzzle);
+    board.cells[idx(3, 3, 8)] = CellState.FISH; // a lone fish: no classic conflict
+    controller.render(board, { conflictSet: new Set([idx(3, 3, 8)]) });
+    expect(cellsOf(root)[idx(3, 3, 8)].dataset.conflict).toBe("conflict");
+    // An empty override clears it even where the classic check would not.
+    controller.render(board, { conflictSet: new Set() });
+    expect(cellsOf(root)[idx(3, 3, 8)].dataset.conflict).toBeUndefined();
+  });
+
+  it("renders classic conflicts exactly as before when no override is given", () => {
+    const { puzzle, board } = fixture(8, "board-override");
+    const controller = new BoardController(root, () => {});
+    controller.setPuzzle(puzzle);
+    board.cells[idx(0, 2, 8)] = CellState.FISH;
+    board.cells[idx(0, 5, 8)] = CellState.FISH;
+    controller.render(board);
+    expect(cellsOf(root)[idx(0, 2, 8)].dataset.conflict).toBe("conflict");
+    expect(cellsOf(root).every((c) => c.dataset.pillar === undefined)).toBe(true);
+  });
+
+  it("reports hovered and focused cells and highlights one cell", () => {
+    const { puzzle, board } = fixture(8, "board-hover");
+    const controller = new BoardController(root, () => {});
+    controller.setPuzzle(puzzle);
+    controller.render(board);
+    const seen: number[] = [];
+    controller.onHover((i) => seen.push(i));
+    const cells = cellsOf(root);
+    cells[10].dispatchEvent(new Event("pointerover", { bubbles: true }));
+    cells[11].dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    root.dispatchEvent(new Event("pointerleave"));
+    expect(seen).toEqual([10, 11, -1]);
+
+    controller.setHighlight(20);
+    expect(cells[20].dataset.pillar).toBe("");
+    controller.setHighlight(-1);
+    expect(cells[20].dataset.pillar).toBeUndefined();
+  });
+});
+
 describe("board: click and drag", () => {
   /** A board wired to a live state array, re-rendered on every reported change. */
   function live(size = 7) {

@@ -6,6 +6,8 @@
  * safe to paste into a group chat before everyone has played.
  */
 
+import { LAYERS } from "./core/deep/puzzle";
+
 /** Format milliseconds as `m:ss`, or `h:mm:ss` from one hour up. */
 export function formatTime(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -27,13 +29,20 @@ export interface ShareModel {
   readonly solvedMs: number | null;
   /** Absolute URL of the page (without hash); the date is appended as `#/date`. */
   readonly baseUrl: string;
+  /** Which daily puzzle was solved; Classic when omitted. */
+  readonly mode?: "classic" | "deep";
 }
 
 /** Build the clipboard message for a solved puzzle. */
 export function shareText(model: ShareModel): string {
-  const lines = [`Fishdoku #${model.number} 🐟 ${model.size}×${model.size}`];
+  const deep = model.mode === "deep";
+  const lines = [
+    deep
+      ? `Fishdoku Deep #${model.number} 🌊 ${LAYERS}×${model.size}×${model.size}`
+      : `Fishdoku #${model.number} 🐟 ${model.size}×${model.size}`,
+  ];
   if (model.solvedMs !== null) lines.push(`⏱️ ${formatTime(model.solvedMs)}`);
-  lines.push(`${model.baseUrl}#/${model.date}`);
+  lines.push(`${model.baseUrl}#/${deep ? "deep/" : ""}${model.date}`);
   return lines.join("\n");
 }
 

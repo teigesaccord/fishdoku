@@ -25,9 +25,15 @@ function edgeColor(px: number): string {
   return px > 1 ? "var(--pond-line)" : "var(--grid-line)";
 }
 
-interface RenderOptions {
+export interface RenderOptions {
   /** Stable seed for choosing "><>" vs "<><" direction; hash of (date, row, col). */
   readonly directionSeed?: string;
+  /**
+   * Fish indices (local to this grid) to show in the conflict style. When given
+   * it replaces the classic rule check, so a multi-layer owner can pass
+   * conflicts that involve other grids. Omitted for Classic.
+   */
+  readonly conflictSet?: ReadonlySet<number>;
 }
 
 export interface BoardControllerLike {
@@ -56,6 +62,8 @@ export class BoardController {
   /** The assigned pond texture character for each cell, indexed row-major. */
   private textures: string[] = [];
   private press: Press | null = null;
+  /** Called with the hovered/focused cell index, or -1 when the pointer/focus leaves. */
+  private hoverHandler: ((index: number) => void) | null = null;
 
   constructor(
     private readonly root: HTMLElement,
@@ -64,6 +72,10 @@ export class BoardController {
   ) {
     root.addEventListener("pointerdown", (e) => this.onPointerDown(e));
     root.addEventListener("pointerover", (e) => this.onPointerOver(e));
+    root.addEventListener("pointerover", (e) => this.hoverHandler?.(this.cellIndexOf(e.target)));
+    root.addEventListener("pointerleave", () => this.hoverHandler?.(-1));
+    root.addEventListener("focusin", (e) => this.hoverHandler?.(this.cellIndexOf(e.target)));
+    root.addEventListener("focusout", () => this.hoverHandler?.(-1));
     // Release can happen anywhere, including outside the board.
     const end = (e: PointerEvent) => this.onPointerEnd(e);
     root.ownerDocument.addEventListener("pointerup", end);
@@ -173,10 +185,23 @@ export class BoardController {
     }
   }
 
+  /** Register a handler for the hovered or focused cell (-1 when none). */
+  onHover(handler: (index: number) => void): void {
+    this.hoverHandler = handler;
+  }
+
+  /** Mark one cell (or none, with -1) as the highlighted pillar position. */
+  setHighlight(index: number): void {
+    for (let i = 0; i < this.cells.length; i++) {
+      if (i === index) this.cells[i].dataset.pillar = "";
+      else delete this.cells[i].dataset.pillar;
+    }
+  }
+
   /** Render a board: glyphs (x / fish), states, pond tint, conflicts and labels. */
   render(board: Board, options: RenderOptions = {}): void {
     const puzzle = this.puzzle ?? { size: board.size, ponds: new Array(board.size * board.size).fill(0) };
-    const conflictSet = conflicts(puzzle, board);
+    const conflictSet = options.conflictSet ?? conflicts(puzzle, board);
 
     for (let i = 0; i < this.cells.length && i < board.cells.length; i++) {
       const el = this.cells[i];
@@ -192,7 +217,7 @@ export class BoardController {
   private visualFor(
     state: CellState,
     i: number,
-    conflictSet: Set<number>,
+    conflictSet: ReadonlySet<number>,
     directionSeed?: string,
   ): { text: string; state: "empty" | "ruled" | "fish"; conflict: boolean } {
     if (state === CellState.FISH) {

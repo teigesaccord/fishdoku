@@ -2,7 +2,8 @@
  * Board persistence for Fishdoku.
  *
  * Each day's board is stored as a JSON object `{ cells, solved, elapsedMs,
- * solvedMs }` under the key `fishdoku:v1:board:<YYYY-MM-DD>`, where `cells` is a
+ * solvedMs }` under the key `fishdoku:v1:board:<YYYY-MM-DD>` (Classic) or
+ * `fishdoku:v1:deep:<YYYY-MM-DD>` (Deep Water, 2*N*N cells), where `cells` is a
  * digit string of length N*N ("0" empty, "1" ruled out, "2" fish), `solved`
  * marks completion, `elapsedMs` is the time spent on the board so far, and
  * `solvedMs` is the time of the first solve (kept even if the board is cleared
@@ -16,10 +17,14 @@
  */
 
 import type { CellState } from "./core/puzzle";
+import type { Mode } from "./core/daily";
 import { encodeCells, decodeCells } from "./core/puzzle";
 
 /** Namespace for all persisted keys; bump when the schema changes. */
 export const STORAGE_PREFIX = "fishdoku:v1:board:";
+
+/** Namespace for Deep Water tanks (same payload, 2*N*N cells). */
+export const DEEP_STORAGE_PREFIX = "fishdoku:v1:deep:";
 
 /** A board's persisted representation: a digit string of cell states plus solved flag. */
 export interface StoredBoard {
@@ -33,9 +38,9 @@ export interface StoredBoard {
   readonly solvedMs: number | null;
 }
 
-/** The localStorage key for a given `YYYY-MM-DD` date. */
-export function storageKey(date: string): string {
-  return `${STORAGE_PREFIX}${date}`;
+/** The localStorage key for a given `YYYY-MM-DD` date in a mode (Classic by default). */
+export function storageKey(date: string, mode: Mode = "classic"): string {
+  return `${mode === "deep" ? DEEP_STORAGE_PREFIX : STORAGE_PREFIX}${date}`;
 }
 
 interface StoredPayload {
@@ -92,8 +97,8 @@ export function __clearMemoryForTests(): void {
 }
 
 /** Read today's board from storage, or null if absent/unreadable/corrupt. */
-export function readBoard(date: string): StoredBoard | null {
-  const raw = readRaw(storageKey(date));
+export function readBoard(date: string, mode: Mode = "classic"): StoredBoard | null {
+  const raw = readRaw(storageKey(date, mode));
   if (raw === null) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<StoredPayload>;
@@ -124,6 +129,7 @@ export function writeBoard(
     readonly elapsedMs?: number;
     readonly solvedMs?: number | null;
   },
+  mode: Mode = "classic",
 ): void {
   const payload = JSON.stringify({
     cells: encodeCells(board.cells),
@@ -131,5 +137,5 @@ export function writeBoard(
     elapsedMs: Math.round(board.elapsedMs ?? 0),
     solvedMs: board.solvedMs == null ? null : Math.round(board.solvedMs),
   });
-  writeRaw(storageKey(date), payload);
+  writeRaw(storageKey(date, mode), payload);
 }

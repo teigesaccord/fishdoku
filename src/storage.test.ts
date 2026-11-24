@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { CellState } from "./core/puzzle";
 import {
   STORAGE_PREFIX,
+  DEEP_STORAGE_PREFIX,
   storageKey,
   readBoard,
   writeBoard,
@@ -101,5 +102,38 @@ describe("storage: in-memory fallback", () => {
       ls.getItem = origGet;
       ls.setItem = origSet;
     }
+  });
+});
+
+describe("storage: Deep Water namespace", () => {
+  const DATE = "2026-12-04";
+
+  it("uses its own key namespace", () => {
+    expect(DEEP_STORAGE_PREFIX).toBe("fishdoku:v1:deep:");
+    expect(storageKey(DATE, "deep")).toBe("fishdoku:v1:deep:2026-12-04");
+    expect(storageKey(DATE, "classic")).toBe(storageKey(DATE));
+  });
+
+  it("round-trips a 2 x 8 x 8 tank", () => {
+    const cells = Array.from({ length: 2 * 64 }, () => CellState.EMPTY);
+    cells[0] = CellState.FISH;
+    cells[127] = CellState.RULED_OUT;
+    writeBoard(DATE, { size: 8, cells, solved: false, elapsedMs: 5_000, solvedMs: null }, "deep");
+    const stored = readBoard(DATE, "deep");
+    expect(stored!.cells.length).toBe(128);
+    expect(stored!.cells[0]).toBe("2");
+    expect(stored!.cells[127]).toBe("1");
+    expect(stored!.elapsedMs).toBe(5_000);
+  });
+
+  it("keeps Classic and Deep boards for the same date apart", () => {
+    writeBoard(DATE, { size: 8, cells: board(8, [0]), solved: true, solvedMs: 1_000 });
+    expect(readBoard(DATE, "deep")).toBeNull();
+
+    const deep = Array.from({ length: 128 }, () => CellState.RULED_OUT);
+    writeBoard(DATE, { size: 8, cells: deep, solved: false }, "deep");
+    expect(readBoard(DATE)!.solved).toBe(true);
+    expect(readBoard(DATE)!.cells).toBe("2" + "0".repeat(63));
+    expect(readBoard(DATE, "deep")!.cells).toBe("1".repeat(128));
   });
 });

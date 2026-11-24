@@ -2,28 +2,41 @@
  * Fishdoku application orchestration: wire the pure core to the UI.
  *
  * All rule logic, puzzle generation and daily mapping live in core/. This module
- * owns only state and flow for one running app instance: pick the playable date,
- * load its puzzle + board from storage, render through the UI modules, save on
- * every change, and react to navigation. It is exposed as a factory so tests can
- * construct an isolated instance against their own DOM instead of hitting global
- * state at import time. The production entry point (`main.ts`) collects the real
- * DOM elements, hands them in, and calls `start()`.
+ * owns only state and flow for one running app instance: pick the playable mode
+ * and date, load its puzzle + board from storage, render through the UI modules,
+ * save on every change, and react to navigation. It is exposed as a factory so
+ * tests can construct an isolated instance against their own DOM instead of
+ * hitting global state at import time. The production entry point (`main.ts`)
+ * collects the real DOM elements, hands them in, and calls `start()`.
+ *
+ * Two modes share this one flow (timer, clear confirmation, win lock, saving):
+ * Classic and Deep Water. What differs between them (generating the puzzle,
+ * drawing the board, judging a solve) lives behind a small `ModeAdapter`.
  */
 
 import type { Puzzle } from "./core/puzzle";
 import { CellState, decodeCells } from "./core/puzzle";
 import { generate } from "./core/generator";
 import { isSolved } from "./core/rules";
+import type { DeepPuzzle } from "./core/deep/puzzle";
+import { tankCellCount } from "./core/deep/puzzle";
+import { generateDeep } from "./core/deep/generator";
+import { isDeepSolved } from "./core/deep/rules";
+import type { Mode } from "./core/daily";
 import {
-  canNext,
-  canPrev,
-  puzzleNumber,
-  puzzleSize,
-  seedForDate,
+  canNextFor,
+  canPrevFor,
+  isPlayable,
+  numberFor,
+  seedFor,
+  sizeFor,
+  today,
+  versionFor,
 } from "./core/daily";
 import { readBoard, writeBoard } from "./storage";
-import { currentDate, navigateTo, redirectToAvailable } from "./router";
+import { currentRoute, navigateTo, redirectToAvailable } from "./router";
 import { BoardController } from "./ui/board";
+import { DeepBoardView } from "./ui/deep-board";
 import type { HeaderModel } from "./ui/header";
 import { initHeader } from "./ui/header";
 import { initWin } from "./ui/win";
@@ -41,6 +54,11 @@ export interface AppElements {
   readonly nextBtn: HTMLButtonElement;
   readonly clearBtn: HTMLButtonElement;
   readonly winOverlay: HTMLElement;
+  /**
+   * Container for the Deep Water tank, shown instead of `boardRoot` in Deep
+   * mode. Created next to `boardRoot` when the entry point does not supply one.
+   */
+  readonly deepRoot?: HTMLElement;
 }
 
 /** Handle returned to the entry point and to tests. */
@@ -49,6 +67,10 @@ export interface App {
   start(): void;
   /** The current playable date (readable by tests). */
   currentDate: () => string;
+  /** The current mode (readable by tests). */
+  currentMode: () => Mode;
+  /** Switch to a mode, keeping the date when it is playable there (else today). */
+  switchMode(mode: Mode): void;
   /** Reset the current date's board to empty so it can be replayed. */
   clear(): void;
   /**
@@ -59,15 +81,42 @@ export interface App {
   onClearTap(handler: () => void): void;
 }
 
+/** What differs between Classic and Deep Water for one loaded date. */
+interface ModeAdapter {
+  /** Generate the puzzle for a date, configure its board view and return the cell count. */
+  setup(date: string): number;
+  /** Draw the player's cells. */
+  render(cells: CellState[], date: string): void;
+  /** Whether the cells solve the loaded puzzle. */
+  isSolved(cells: CellState[]): boolean;
+  /** Show this mode's board and hide the other one. */
+  show(): void;
+}
+
 /** Build an isolated app instance from its DOM elements (does not start it). */
 export function createApp(elements: AppElements): App {
   const { boardRoot, headerRoot, prevBtn, nextBtn, clearBtn, winOverlay } = elements;
 
+  /** Deep Water container: supplied, or created right after the classic board. */
+  const deepRoot =
+    elements.deepRoot ??
+    (() => {
+      const el = document.createElement("div");
+      el.id = "deep-board";
+      boardRoot.insertAdjacentElement("afterend", el);
+      return el;
+    })();
+  deepRoot.hidden = true;
+
   /** One controller reused across dates; it resizes its grid when the size changes. */
   const board = new BoardController(boardRoot, onTap);
+  /** The Deep Water view is built on first use so Classic-only sessions never pay for it. */
+  let deepView: DeepBoardView | null = null;
+
   const headerView = initHeader(headerRoot, { prevBtn, nextBtn });
   headerView.onPrev(() => goToRelative(-1));
   headerView.onNext(() => goToRelative(1));
+  headerView.onModeChange((target) => switchMode(target));
   const winView = initWin(winOverlay);
   winView.onDismiss(() => {
     if (solved) hideAndLockSolved();
@@ -75,9 +124,10 @@ export function createApp(elements: AppElements): App {
   winView.onShare(() =>
     copyToClipboard(
       shareText({
-        number: puzzleNumber(current),
+        mode,
+        number: numberFor(mode, current),
         date: current,
-        size: puzzleSize(current),
+        size: sizeFor(mode, current),
         solvedMs,
         baseUrl: window.location.origin + window.location.pathname,
       }),
@@ -91,8 +141,61 @@ export function createApp(elements: AppElements): App {
   let cells: CellState[] = [];
   let solved = false;
   let current = "";
-  /** The puzzle backing `current`; cached so taps never regenerate a size-11 grid. */
+  let mode: Mode = "classic";
+
+  /** The classic puzzle backing `current`; cached so taps never regenerate a size-11 grid. */
   let currentPuzzle: Puzzle | null = null;
+  /** The Deep Water tank backing `current` in Deep mode. */
+  let currentTank: DeepPuzzle | null = null;
+
+  const adapters: Record<Mode, ModeAdapter> = {
+    classic: {
+      setup(date) {
+        const size = sizeFor("classic", date);
+        currentPuzzle = generate(versionFor("classic", date), seedFor("classic", date), size);
+        board.setPuzzle(currentPuzzle);
+        return size * size;
+      },
+      render(c, date) {
+        const size = currentPuzzle?.size ?? sizeFor("classic", date);
+        board.render({ size, cells: c }, { directionSeed: date });
+      },
+      isSolved(c) {
+        const size = currentPuzzle?.size ?? sizeFor("classic", current);
+        const pondLayout = currentPuzzle?.ponds ?? new Array(size).fill(0);
+        return isSolved({ size, ponds: pondLayout }, { size, cells: c });
+      },
+      show() {
+        boardRoot.hidden = false;
+        deepRoot.hidden = true;
+      },
+    },
+    deep: {
+      setup(date) {
+        const size = sizeFor("deep", date);
+        currentTank = generateDeep(versionFor("deep", date), seedFor("deep", date), size);
+        deepView ??= new DeepBoardView(deepRoot, onTap);
+        deepView.setPuzzle(currentTank);
+        return tankCellCount(size);
+      },
+      render(c, date) {
+        if (!deepView || !currentTank) return;
+        deepView.render({ size: currentTank.size, cells: c }, { directionSeed: date });
+      },
+      isSolved(c) {
+        return currentTank !== null && isDeepSolved(currentTank, { size: currentTank.size, cells: c });
+      },
+      show() {
+        boardRoot.hidden = true;
+        deepRoot.hidden = false;
+      },
+    },
+  };
+
+  /** The adapter for the current mode. */
+  function adapter(): ModeAdapter {
+    return adapters[mode];
+  }
 
   // Solve timer. Time accrues only while the current date is on screen, unsolved
   // and the tab is visible; it is persisted with the board so reloads and
@@ -127,28 +230,28 @@ export function createApp(elements: AppElements): App {
     headerView.setTime(solved ? solvedMs : totalElapsed());
   }
 
-  /** Build and load the puzzle + board for a specific playable date. */
-  function loadDate(date: string): void {
-    // Bank and save the time spent on the date we are leaving.
+  /** Build and load the puzzle + board for a playable date in a mode. */
+  function load(nextMode: Mode, date: string): void {
+    // Bank and save the time spent on the board we are leaving (in its own mode).
     if (current !== "") {
       pauseClock();
       persist();
     }
+    mode = nextMode;
     current = date;
-    const size = puzzleSize(date);
-    currentPuzzle = generate("v1", seedForDate(date), size);
-    board.setPuzzle(currentPuzzle);
+    const count = adapter().setup(date);
+    adapter().show();
 
-    const stored = readBoard(date);
+    const stored = readBoard(date, mode);
     // A stored board of the wrong length (e.g. saved by the old, broken clear)
     // cannot be mapped onto the grid, so start that date fresh instead.
-    if (stored && stored.cells.length === size * size) {
+    if (stored && stored.cells.length === count) {
       cells = decodeCells(stored.cells);
       solved = stored.solved;
       elapsedMs = stored.elapsedMs;
       solvedMs = stored.solvedMs;
     } else {
-      cells = emptyCells(size);
+      cells = emptyCells(count);
       solved = false;
       elapsedMs = 0;
       solvedMs = null;
@@ -156,7 +259,7 @@ export function createApp(elements: AppElements): App {
     runningSince = null;
     resumeClock();
 
-    board.render({ size, cells }, { directionSeed: current });
+    adapter().render(cells, current);
     headerView.render(headerModel());
     renderTime();
     // A date that was already solved shows the solved board and the header
@@ -168,10 +271,11 @@ export function createApp(elements: AppElements): App {
   function headerModel(): HeaderModel {
     return {
       date: current,
-      number: puzzleNumber(current),
+      number: numberFor(mode, current),
       solved,
-      canPrev: canPrev(current),
-      canNext: canNext(current),
+      canPrev: canPrevFor(mode, current),
+      canNext: canNextFor(mode, current),
+      mode,
     };
   }
 
@@ -179,21 +283,26 @@ export function createApp(elements: AppElements): App {
   function showWin(replayMs: number | null = null): void {
     winView.show({
       date: current,
-      number: puzzleNumber(current),
+      number: numberFor(mode, current),
       solvedMs,
       replayMs,
+      mode,
     } satisfies WinModel);
   }
 
   /** Persist the current board to storage. */
   function persist(): void {
-    writeBoard(current, {
-      size: puzzleSize(current),
-      cells,
-      solved,
-      elapsedMs: totalElapsed(),
-      solvedMs,
-    });
+    writeBoard(
+      current,
+      {
+        size: sizeFor(mode, current),
+        cells,
+        solved,
+        elapsedMs: totalElapsed(),
+        solvedMs,
+      },
+      mode,
+    );
   }
 
   /** Handle a tap that advances `index` to `nextState`; only acts when unsolved. */
@@ -201,21 +310,19 @@ export function createApp(elements: AppElements): App {
     if (solved) return; // solved boards are locked for replay
     cells[index] = nextState;
     persist();
-    board.render({ size: puzzleSize(current), cells }, { directionSeed: current });
+    adapter().render(cells, current);
     checkWin();
   }
 
   /** Mark the board solved and show the win overlay when complete. */
   function checkWin(): void {
     if (solved) return;
-    const size = currentPuzzle?.size ?? puzzleSize(current);
-    const pondLayout = currentPuzzle?.ponds ?? new Array(size).fill(0);
-    if (isSolved({ size, ponds: pondLayout }, { size, cells })) {
+    if (adapter().isSolved(cells)) {
       pauseClock();
       solved = true;
       if (solvedMs === null) solvedMs = elapsedMs;
       persist();
-      board.render({ size, cells }, { directionSeed: current });
+      adapter().render(cells, current);
       headerView.render(headerModel());
       renderTime();
       showWin(elapsedMs);
@@ -226,18 +333,18 @@ export function createApp(elements: AppElements): App {
   function hideAndLockSolved(): void {
     winView.hide();
     // The lock lives in `solved`; navigation to another date rebuilds state in
-    // loadDate(), so there is nothing else to do here.
+    // load(), so there is nothing else to do here.
   }
 
-  /** A fresh, untouched board for the current date: every cell empty. */
-  function emptyCells(size: number): CellState[] {
-    return new Array(size * size).fill(CellState.EMPTY);
+  /** A fresh, untouched board: every cell empty. */
+  function emptyCells(count: number): CellState[] {
+    return new Array(count).fill(CellState.EMPTY);
   }
 
   /**
    * Reset the current board to how the player started it and allow replay
-   * (used by the clear button). The board is N*N cells; resetting only N of
-   * them used to leave every row but the first untouched on screen.
+   * (used by the clear button). Every cell is reset: N*N for Classic, every
+   * layer for Deep Water.
    */
   function clear(): void {
     // Clearing mid-attempt keeps the clock running (no free restarts). Once the
@@ -249,10 +356,9 @@ export function createApp(elements: AppElements): App {
     }
     solved = false;
     resumeClock();
-    const size = puzzleSize(current);
-    cells = emptyCells(size);
+    cells = emptyCells(cells.length);
     persist();
-    board.render({ size, cells }, { directionSeed: current });
+    adapter().render(cells, current);
     headerView.render(headerModel());
     renderTime();
     winView.hide();
@@ -286,7 +392,7 @@ export function createApp(elements: AppElements): App {
     });
   }
 
-  /** Navigate relative to today by whole days, then load the target date. */
+  /** Navigate relative to the current date by whole days, then load the target date. */
   function goToRelative(delta: number): void {
     const [y, m, d] = current.split("-").map(Number);
     if (Number.isNaN(y)) return;
@@ -296,8 +402,18 @@ export function createApp(elements: AppElements): App {
     // which would send navigation to the wrong puzzle.
     const off = new Date(y, m - 1, d);
     off.setDate(off.getDate() + delta);
-    navigateTo(localIso(off));
-    loadDate(currentDate());
+    navigateTo(localIso(off), mode);
+    const route = currentRoute();
+    load(route.mode, route.date);
+  }
+
+  /** Switch modes, keeping the current date when it is playable there (else today). */
+  function switchMode(target: Mode): void {
+    if (target === mode) return;
+    const date = isPlayable(target, current) ? current : today();
+    navigateTo(date, target);
+    const route = currentRoute();
+    load(route.mode, route.date);
   }
 
   /** Format a Date as `YYYY-MM-DD` in local time. */
@@ -309,17 +425,20 @@ export function createApp(elements: AppElements): App {
     );
   }
 
-  /** Reload for whatever date the URL now points at (browser back/forward, deep links). */
+  /** Reload for whatever mode and date the URL now points at (back/forward, deep links). */
   function handleUrl(): void {
-    const next = currentDate();
-    if (next !== current) loadDate(next);
+    const route = currentRoute();
+    if (route.mode !== mode || route.date !== current) load(route.mode, route.date);
   }
 
   const app: App = {
     currentDate: () => current,
+    currentMode: () => mode,
+    switchMode,
     start() {
       redirectToAvailable();
-      loadDate(currentDate());
+      const route = currentRoute();
+      load(route.mode, route.date);
       window.addEventListener("hashchange", handleUrl);
       // pushState is silent across browsers; popstate covers browser back/forward.
       window.addEventListener("popstate", handleUrl);
@@ -345,4 +464,3 @@ export function createApp(elements: AppElements): App {
 
   return app;
 }
-

@@ -1,5 +1,6 @@
 /**
- * Header view: ASCII title, puzzle number + date, a running timer, a solved
+ * Header view: ASCII title, a Classic / Deep mode switch, puzzle number + date,
+ * a running timer, a solved
  * badge (tappable to reopen the win/share screen), and wired
  * prev/next buttons disabled at the available bounds. Navigation itself lives in
  * main (via the router); this module only reports tap events so it stays small
@@ -22,6 +23,8 @@ export interface HeaderModel {
   readonly canPrev: boolean;
   /** Whether a later playable puzzle exists. */
   readonly canNext: boolean;
+  /** Which daily puzzle is shown; Classic when omitted. */
+  readonly mode?: "classic" | "deep";
 }
 
 export interface HeaderControls {
@@ -40,7 +43,15 @@ export interface HeaderView {
   setTime(ms: number | null): void;
   /** Register a handler fired when the solved badge is tapped. */
   onSolvedTap(handler: () => void): void;
+  /** Register a handler fired when the player picks a mode in the mode switch. */
+  onModeChange(handler: (mode: "classic" | "deep") => void): void;
 }
+
+/** The two modes in switch order, with their button labels. */
+const MODES: ReadonlyArray<{ readonly mode: "classic" | "deep"; readonly label: string }> = [
+  { mode: "classic", label: "Classic" },
+  { mode: "deep", label: "Deep" },
+];
 
 /** Build the header once and return it for later state updates. */
 export function initHeader(root: HTMLElement, controls: HeaderControls): HeaderView {
@@ -62,11 +73,31 @@ export function initHeader(root: HTMLElement, controls: HeaderControls): HeaderV
   solvedBadge.title = "Show result & share";
   solvedBadge.hidden = true;
 
-  root.append(title, sub, timer, solvedBadge);
+  // Mode switch: a two-button segmented control (Classic / Deep).
+  const modeSwitch = document.createElement("div");
+  modeSwitch.className = "mode-switch";
+  modeSwitch.setAttribute("role", "group");
+  modeSwitch.setAttribute("aria-label", "Puzzle mode");
+  const modeButtons = MODES.map(({ mode, label }) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mode-btn";
+    btn.dataset.mode = mode;
+    btn.textContent = label;
+    btn.setAttribute("aria-pressed", String(mode === "classic"));
+    modeSwitch.append(btn);
+    return btn;
+  });
+
+  root.append(title, modeSwitch, sub, timer, solvedBadge);
 
   const view: HeaderView = {
     render(model: HeaderModel) {
-      sub.textContent = `Puzzle #${model.number} · ${model.date}`;
+      const deep = model.mode === "deep";
+      sub.textContent = `${deep ? "Deep" : "Puzzle"} #${model.number} · ${model.date}`;
+      for (const btn of modeButtons) {
+        btn.setAttribute("aria-pressed", String(btn.dataset.mode === (model.mode ?? "classic")));
+      }
       solvedBadge.hidden = !model.solved;
       solvedBadge.textContent = model.solved ? "SOLVED ✓ · SHARE" : "";
       controls.prevBtn.disabled = !model.canPrev;
@@ -84,6 +115,11 @@ export function initHeader(root: HTMLElement, controls: HeaderControls): HeaderV
     },
     onSolvedTap(handler: () => void) {
       solvedBadge.addEventListener("click", handler);
+    },
+    onModeChange(handler: (mode: "classic" | "deep") => void) {
+      for (const btn of modeButtons) {
+        btn.addEventListener("click", () => handler(btn.dataset.mode as "classic" | "deep"));
+      }
     },
   };
 

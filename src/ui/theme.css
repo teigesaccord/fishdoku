@@ -501,3 +501,203 @@ button:disabled {
   display: block;
   margin: 18px auto 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Deep Water mode: the Classic / Deep switch and the two-layer tank.
+   Layer grids reuse .board-cell; ui/deep-board.ts sets --cell per layer role
+   (wide = side by side, full = the active layer on phones, mini = read-only
+   map of another layer). */
+
+/* `hidden` must win over the boards' own display rules. */
+#board[hidden],
+#deep-board[hidden] {
+  display: none;
+}
+
+.mode-switch {
+  display: inline-flex;
+  margin: 2px 0 8px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.mode-btn {
+  border: none;
+  border-radius: 0;
+  padding: 4px 14px;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: transparent;
+}
+
+.mode-btn + .mode-btn {
+  border-left: 1px solid var(--panel-border);
+}
+
+.mode-btn[aria-pressed="true"] {
+  background: var(--fish-soft);
+  color: var(--fish);
+  font-weight: 700;
+}
+
+.deep-tank {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+/* Tabs only matter when one layer is shown at a time. */
+.layer-tabs {
+  display: none;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.deep-tank[data-layout="narrow"] .layer-tabs {
+  display: inline-flex;
+}
+
+.layer-tab {
+  border: none;
+  border-radius: 0;
+  padding: 5px 14px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  background: transparent;
+}
+
+.layer-tab + .layer-tab {
+  border-left: 1px solid var(--panel-border);
+}
+
+.layer-tab[aria-selected="true"] {
+  background: var(--fish-soft);
+  color: var(--fish);
+  font-weight: 700;
+}
+
+.deep-layers {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.deep-tank[data-layout="narrow"] .deep-layers {
+  display: grid;
+  grid-template-columns: auto;
+  justify-content: center;
+  justify-items: center;
+  gap: 14px;
+}
+
+.deep-layer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.deep-layer[data-role="full"] {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.deep-layer[data-role="mini"] {
+  grid-row: 2;
+  cursor: pointer;
+}
+
+.layer-name {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--fish);
+}
+
+.deep-layer[data-role="mini"] .layer-name {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.layer-board {
+  display: grid;
+  gap: 0;
+  border: 2px solid var(--pond-line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--board-shadow);
+}
+
+/* The deep layer reads darker: an inset shadow tints the cell background
+   without touching the glyphs or the hover filter. */
+.deep-layer[data-layer="1"] .board-cell {
+  box-shadow: inset 0 0 0 999px var(--layer-tint-deep);
+}
+
+:root {
+  --layer-tint-deep: rgba(12, 40, 96, 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --layer-tint-deep: rgba(0, 6, 24, 0.36);
+  }
+}
+
+/* Same (row, col) in the other layers while a cell is hovered or focused. */
+.board-cell[data-pillar] {
+  outline: 2px dashed var(--fish);
+  outline-offset: -4px;
+}
+
+/* Mini-maps are pictures: hide pond textures, keep fish, marks and conflicts. */
+.deep-layer[data-role="mini"] .board-cell {
+  cursor: pointer;
+  font-size: calc(var(--cell) * 0.36);
+  letter-spacing: -0.12em;
+}
+
+.deep-layer[data-role="mini"] .board-cell[data-state="empty"] {
+  color: transparent;
+}
+
+.deep-layer[data-role="mini"] .board-cell[data-pillar] {
+  outline-width: 1px;
+  outline-offset: -2px;
+}
+
+.deep-layer[data-role="mini"] .layer-board {
+  border-width: 1px;
+  border-radius: 4px;
+}
+
+/* Deep Water "+" shadow example in How to play. */
+.help-shadow {
+  margin: 4px 0 10px;
+}
+
+.help-shadow pre {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--grid-line);
+  border-radius: 6px;
+  background: var(--cell-bg);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--fg);
+  overflow-x: auto;
+}
+
+.help-shadow figcaption {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

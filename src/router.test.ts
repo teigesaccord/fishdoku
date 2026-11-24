@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { clampDate, today } from "./core/daily";
-import { parseHash, currentDate, redirectToAvailable, navigateTo } from "./router";
+import {
+  parseHash,
+  parseRoute,
+  hashFor,
+  currentDate,
+  currentMode,
+  redirectToAvailable,
+  navigateTo,
+} from "./router";
 
 /** Open a specific hash as the current location. */
 function openHash(hash: string): void {
@@ -70,5 +78,49 @@ describe("router: subpath hosting", () => {
     redirectToAvailable();
     expect(window.location.pathname).toBe("/fishdoku/");
     window.history.replaceState({}, "", "/");
+  });
+});
+
+describe("router: Deep Water routes", () => {
+  it("parses #/deep/<date> and #/deep as Deep, everything else as Classic", () => {
+    expect(parseRoute("#/deep/2026-12-04")).toEqual({ mode: "deep", date: "2026-12-04" });
+    expect(parseRoute("#/deep")).toEqual({ mode: "deep", date: null });
+    expect(parseRoute("#/deep/")).toEqual({ mode: "deep", date: null });
+    expect(parseRoute("#/2026-11-20")).toEqual({ mode: "classic", date: "2026-11-20" });
+    expect(parseRoute("")).toEqual({ mode: "classic", date: null });
+    expect(parseRoute("#/deeper")).toEqual({ mode: "classic", date: "deeper" });
+  });
+
+  it("opens a playable shared Deep link as-is", () => {
+    const t = today();
+    openHash(`#/deep/${t}`);
+    expect(redirectToAvailable()).toBe(t);
+    expect(currentMode()).toBe("deep");
+    expect(window.location.hash).toBe(`#/deep/${t}`);
+  });
+
+  it("keeps classic links meaning Classic", () => {
+    openHash("#/2026-11-20");
+    expect(currentMode()).toBe("classic");
+    expect(currentDate()).toBe(clampDate("2026-11-20"));
+  });
+
+  it("redirects out-of-range Deep dates to #/deep/<today>", () => {
+    for (const bad of ["2999-01-01", "2020-01-01", "nope"]) {
+      openHash(`#/deep/${bad}`);
+      expect(redirectToAvailable()).toBe(today());
+      expect(window.location.hash).toBe(`#/deep/${today()}`);
+    }
+    openHash("#/deep");
+    redirectToAvailable();
+    expect(window.location.hash).toBe(`#/deep/${today()}`);
+  });
+
+  it("navigates within Deep, keeping the prefix", () => {
+    openHash("#/deep");
+    navigateTo(today(), "deep");
+    expect(window.location.hash).toBe(`#/deep/${today()}`);
+    expect(hashFor("deep", "2026-12-04")).toBe("#/deep/2026-12-04");
+    expect(hashFor("classic", "2026-12-04")).toBe("#/2026-12-04");
   });
 });

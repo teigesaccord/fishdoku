@@ -40,6 +40,40 @@ function heading(text: string): HTMLHeadingElement {
   return h;
 }
 
+/** The two Deep Water rules that link the layers. */
+function deepRules(): HTMLUListElement {
+  const list = document.createElement("ul");
+  list.className = "help-rules help-deep-rules";
+  const pillar = document.createElement("li");
+  pillar.append(strong("One fish per pillar: "), "no two fish in the same spot in different layers.");
+  const touch = document.createElement("li");
+  touch.append(
+    strong("No touching through the water: "),
+    "a fish can't sit right beside, above or below (on the grid) a fish in the other layer. Diagonal is fine.",
+  );
+  list.append(pillar, touch);
+  return list;
+}
+
+/** A small ASCII picture of the "+" shadow a fish casts on the next layer. */
+function shadowExample(): HTMLElement {
+  const fig = document.createElement("figure");
+  fig.className = "help-shadow";
+  const pre = document.createElement("pre");
+  pre.textContent = [
+    " surface       deep",
+    " . . . . .     . . . . .",
+    " . . . . .     . . x . .",
+    " . . ><> .     . x x x .",
+    " . . . . .     . . x . .",
+    " . . . . .     . . . . .",
+  ].join("\n");
+  const caption = document.createElement("figcaption");
+  caption.textContent = "A fish in one layer rules out a + shape in the other layer.";
+  fig.append(pre, caption);
+  return fig;
+}
+
 /** Wire the help button and overlay element; returns its controls. */
 export function initHelp(overlay: HTMLElement, openBtn: HTMLButtonElement): HelpView {
   const box = document.createElement("div");
@@ -78,6 +112,11 @@ export function initHelp(overlay: HTMLElement, openBtn: HTMLButtonElement): Help
     para("A fish shown as ", glyph(">x>", "conflict"), " is breaking a rule."),
     heading("Daily puzzle"),
     para("There's a new puzzle every day. Use ‹ › to play past days. The clock runs while a puzzle is open, so share your time when you finish."),
+    heading("Deep Water"),
+    para("Switch to ", strong("Deep"), " for the hard daily puzzle: a tank of two 8×8 layers, surface and deep. Each layer follows all the rules above. On top of that:"),
+    deepRules(),
+    shadowExample(),
+    para("Neither layer can be solved on its own. Hover over or focus a cell to see the same spot in the other layer."),
     closeBtn,
   );
   overlay.appendChild(box);
